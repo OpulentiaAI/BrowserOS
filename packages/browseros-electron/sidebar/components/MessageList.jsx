@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import React, { useEffect, useRef } from 'react';
 
 function MessageList({ messages, isProcessing }) {
   const listRef = useRef(null);

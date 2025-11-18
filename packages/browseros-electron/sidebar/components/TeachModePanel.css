@@ -1,0 +1,83 @@
+.teach-mode-panel {
+  position: fixed;
+  top: 80px;
+  right: 16px;
+  background: #2d2d2d;
+  border: 1px solid #444;
+  border-radius: 12px;
+  padding: 16px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
+  z-index: 950;
+  max-width: 320px;
+  min-width: 240px;
+}
+
+.teach-state-section,
+.mcp-status-section {
+  margin-bottom: 12px;
+}
+
+.teach-state-section:last-child,
+.mcp-status-section:last-child {
+  margin-bottom: 0;
+}
+
+.teach-state-header,
+.mcp-status-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid #444;
+}
+
+.teach-icon,
+.mcp-icon {
+  font-size: 18px;
+}
+
+.teach-label,
+.mcp-label {
+  color: #e0e0e0;
+  font-weight: 600;
+  font-size: 14px;
+  flex: 1;
+}
+
+.teach-payload,
+.mcp-payload {
+  color: #b0b0b0;
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.teach-workflow-info,
+.teach-step-info,
+.mcp-server-name {
+  margin-bottom: 6px;
+}
+
+.teach-workflow-info strong,
+.teach-step-info strong,
+.mcp-server-name strong {
+  color: #4a9eff;
+  margin-right: 4px;
+}
+
+.teach-message {
+  background: rgba(74, 158, 255, 0.1);
+  padding: 8px;
+  border-radius: 6px;
+  margin-top: 8px;
+  color: #d4d4d4;
+}
+
+.mcp-error {
+  background: rgba(244, 135, 113, 0.1);
+  padding: 8px;
+  border-radius: 6px;
+  margin-top: 8px;
+  color: #f48771;
+  font-size: 12px;
+}

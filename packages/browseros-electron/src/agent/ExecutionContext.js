@@ -8,6 +8,10 @@
 
 const { MessageManager } = require('./MessageManager');
 const { TodoStore } = require('./TodoStore');
+const { PubSub } = require('./PubSub');
+const { KlavisAPIManager } = require('./mcp/KlavisAPIManager');
+const { Logging } = require('./utils/Logging');
+const { GlowAnimationService } = require('./services/GlowAnimationService');
 
 class ExecutionContext {
   constructor(options = {}) {
@@ -16,6 +20,8 @@ class ExecutionContext {
     this.browserContext = options.browserContext;
     this.messageManager = options.messageManager || new MessageManager();
     this.todoStore = options.todoStore || new TodoStore();
+    Logging.initialize({ debugMode: process.env.BROWSEROS_DEBUG === 'true' });
+    this._glowService = options.glowService || GlowAnimationService.getInstance();
     
     // Abort control
     this.abortController = options.abortController || new AbortController();
@@ -54,6 +60,9 @@ class ExecutionContext {
     // Human input state
     this._humanInputRequestId = null;
     this._humanInputResponse = null;
+
+    // Scoped PubSub channel for this execution (optional injection)
+    this._pubSubChannel = options.pubsub || PubSub.getChannel(this.executionId);
   }
 
   // Vision/context capabilities
@@ -124,6 +133,11 @@ class ExecutionContext {
     if (this.browserContext) {
       this.browserContext.unlockTab();
     }
+    if (this._glowService && typeof this._glowService.stopAllGlows === 'function') {
+      this._glowService.stopAllGlows().catch((error) => {
+        Logging.log('ExecutionContext', `Failed to stop glow animations: ${error.message}`, 'warning');
+      });
+    }
   }
 
   isExecuting() {
@@ -186,6 +200,20 @@ class ExecutionContext {
 
   getReasoningHistory(count = 5) {
     return this._reasoningHistory.slice(-count);
+  }
+
+  // PubSub access (for planner, human input, UI streaming, etc.)
+  getPubSub() {
+    return this._pubSubChannel;
+  }
+
+  // Klavis API manager for MCP operations
+  getKlavisAPIManager() {
+    return KlavisAPIManager.getInstance();
+  }
+
+  getGlowService() {
+    return this._glowService;
   }
 
   // Human input

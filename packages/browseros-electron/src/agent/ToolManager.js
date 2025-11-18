@@ -27,7 +27,9 @@ class ToolManager {
    * @param {Array} toolArray
    */
   registerMultiple(toolArray) {
-    toolArray.forEach((tool) => this.register(tool));
+    for (const tool of toolArray) {
+      this.register(tool);
+    }
   }
 
   /**
@@ -88,9 +90,30 @@ class ToolManager {
   toAISDKFormat() {
     const aiTools = {};
     for (const [name, tool] of this.tools) {
+      // Ensure we always provide a valid JSON schema for parameters.
+      // Some tools don't specify parameters, so we default to an empty object schema.
+      const rawParams = tool.parameters && typeof tool.parameters === 'object'
+        ? tool.parameters
+        : { type: 'object', properties: {} };
+
+      // In AI SDK 6 Beta, schemas should be provided as pure JSON Schema objects.
+      // Wrapping with jsonSchema() (used for Zod conversion) can strip the `type`,
+      // resulting in invalid schemas (type: "None"). We pass the schema directly.
+      const wrappedParameters = {
+        type: 'object',
+        properties: {},
+        additionalProperties: false,
+        ...rawParams
+      };
+
+      // Ensure required is an array if provided
+      if (wrappedParameters.required && !Array.isArray(wrappedParameters.required)) {
+        wrappedParameters.required = Object.values(wrappedParameters.required);
+      }
+
       aiTools[name] = {
         description: tool.description,
-        parameters: tool.parameters,
+        parameters: wrappedParameters,
         execute: tool.execute
       };
     }

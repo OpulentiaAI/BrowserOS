@@ -27,17 +27,27 @@ function createClickTool(context) {
         context.incrementToolUsageMetrics('click');
 
         const page = await context.browserContext.getCurrentPage();
-        
-        if (nodeId) {
-          await page.clickElement(nodeId);
-          await page.waitForStability();
-          return toolSuccess(`Successfully clicked element ${nodeId}`);
-        } else if (selector) {
-          await page.click(selector);
-          await page.waitForStability();
-          return toolSuccess(`Successfully clicked ${selector}`);
+
+        if (selector) {
+          // Use JavaScript to click the element by selector
+          const script = `
+            (function() {
+              const element = document.querySelector('${selector.replace(/'/g, "\\'")}');
+              if (element) {
+                element.click();
+                return { success: true };
+              }
+              return { success: false, error: 'Element not found' };
+            })();
+          `;
+          const result = await page.evaluate(script);
+          if (result && result.success) {
+            return toolSuccess(`Successfully clicked ${selector}`);
+          } else {
+            return toolError(result?.error || 'Failed to click element');
+          }
         } else {
-          return toolError('Must provide either selector or nodeId');
+          return toolError('Selector is required for clicking elements');
         }
       } catch (error) {
         context.incrementMetric('errors');

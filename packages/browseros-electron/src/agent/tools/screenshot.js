@@ -57,18 +57,19 @@ Screenshots help you see what's on the page and make better decisions.`,
         }
 
         const page = await context.browserContext.getCurrentPage();
-        const screenshotDataUrl = await page.takeScreenshot(selectedSize);
+        const screenshotResult = await page.takeScreenshot();
 
-        if (!screenshotDataUrl) {
+        if (!screenshotResult || !screenshotResult.success) {
           return toolSuccess('Screenshot unavailable. Proceeding without visual capture.');
         }
 
+        const screenshotDataUrl = screenshotResult.data;
+
         // Add screenshot to message history
-        context.messageManager.addScreenshot(screenshotDataUrl, `Captured ${selectedSize} screenshot`);
+        context.messageManager.addScreenshot(screenshotDataUrl, `Captured screenshot`);
 
         const result = {
-          message: `Captured ${selectedSize} screenshot of the page.`,
-          size: selectedSize,
+          message: `Captured screenshot of the page.`,
           screenshot: screenshotDataUrl
         };
 

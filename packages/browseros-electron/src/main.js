@@ -115,6 +115,16 @@ function closeTab(tabId) {
     mainWindow.removeBrowserView(tab.view);
   }
 
+  // Clean up glow state for this tab
+  try {
+    const glowService = GlowAnimationService.getInstance();
+    if (glowService) {
+      glowService.handleTabClosed(tabId);
+    }
+  } catch (error) {
+    // Glow cleanup is optional, don't fail the tab close
+  }
+
   // Clean up
   tab.view.webContents.destroy();
   tabs.delete(tabId);
@@ -146,7 +156,8 @@ function listTabs() {
     id: tab.id,
     url: tab.url,
     title: tab.title,
-    isActive: tab.isActive
+    isActive: tab.isActive,
+    active: tab.isActive
   }));
 }
 
@@ -502,10 +513,18 @@ ipcMain.handle('set-setting', async (event, key, value) => {
 // Agent task execution with AI SDK 6
 const { ExecutionContext } = require('./agent/ExecutionContext');
 const { BrowserContext } = require('./agent/BrowserContext');
-const { ToolManager } = require('./agent/ToolManager');
-const { createAllTools } = require('./agent/tools');
+const { AgentOrchestrator } = require('./agent/AgentOrchestrator');
+const { Logging } = require('./agent/utils/Logging');
+const { GlowAnimationService } = require('./agent/services/GlowAnimationService');
 
-ipcMain.handle('run-agent-task', async (event, { prompt, currentUrl }) => {
+// Basic logger for IPC/browser automation tracing
+const logAutomation = (...args) => {
+  const prefix = '[BrowserAutomation]';
+  // eslint-disable-next-line no-console
+  console.log(prefix, ...args);
+};
+
+ipcMain.handle('run-agent-task', async (event, { prompt, currentUrl, mode = 'browse', workflow, metadata }) => {
   // Create browser automation context for the agent (legacy compatibility)
   const browserAutomation = {
     navigate: async (url) => {
@@ -514,6 +533,7 @@ ipcMain.handle('run-agent-task', async (event, { prompt, currentUrl }) => {
       if (!url.startsWith('http://') && !url.startsWith('https://')) {
         url = 'https://' + url;
       }
+      logAutomation('navigate', { tabId: activeTab.id, url });
       await activeTab.view.webContents.loadURL(url);
       return { success: true, url };
     },
@@ -532,8 +552,10 @@ ipcMain.handle('run-agent-task', async (event, { prompt, currentUrl }) => {
       `;
       try {
         const result = await activeTab.view.webContents.executeJavaScript(script);
+        logAutomation('clickElement', { tabId: activeTab.id, selector, result });
         return result;
       } catch (error) {
+        logAutomation('clickElement:error', { tabId: activeTab.id, selector, error: error.message });
         return { success: false, error: error.message };
       }
     },
@@ -554,8 +576,10 @@ ipcMain.handle('run-agent-task', async (event, { prompt, currentUrl }) => {
       `;
       try {
         const result = await activeTab.view.webContents.executeJavaScript(script);
+        logAutomation('typeText', { tabId: activeTab.id, selector, text, result });
         return result;
       } catch (error) {
+        logAutomation('typeText:error', { tabId: activeTab.id, selector, error: error.message });
         return { success: false, error: error.message };
       }
     },
@@ -564,8 +588,10 @@ ipcMain.handle('run-agent-task', async (event, { prompt, currentUrl }) => {
       if (!activeTab) return { success: false, error: 'No active tab' };
       try {
         const result = await activeTab.view.webContents.executeJavaScript(script);
+        logAutomation('executeScript', { tabId: activeTab.id, script: script?.slice?.(0, 200) || typeof script, result });
         return { success: true, result };
       } catch (error) {
+        logAutomation('executeScript:error', { tabId: activeTab.id, error: error.message });
         return { success: false, error: error.message };
       }
     },
@@ -574,8 +600,11 @@ ipcMain.handle('run-agent-task', async (event, { prompt, currentUrl }) => {
       if (!activeTab) return { success: false, error: 'No active tab' };
       try {
         const image = await activeTab.view.webContents.capturePage();
-        return { success: true, data: image.toDataURL() };
+        const data = image.toDataURL();
+        logAutomation('screenshot', { tabId: activeTab.id, length: data?.length });
+        return { success: true, data };
       } catch (error) {
+        logAutomation('screenshot:error', { tabId: activeTab.id, error: error.message });
         return { success: false, error: error.message };
       }
     },
@@ -590,21 +619,28 @@ ipcMain.handle('run-agent-task', async (event, { prompt, currentUrl }) => {
     // Tab management methods
     createTab: async (url) => {
       const tabId = createTab(url);
+      logAutomation('createTab', { tabId, url });
       return { success: true, tabId };
     },
     switchTab: async (tabId) => {
       const success = switchTab(tabId);
+      logAutomation('switchTab', { tabId, success });
       return { success };
     },
     closeTab: async (tabId) => {
       const success = closeTab(tabId);
+      logAutomation('closeTab', { tabId, success });
       return { success };
     },
     listTabs: () => {
-      return { success: true, tabs: listTabs() };
+      const tabs = listTabs();
+      logAutomation('listTabs', { tabs });
+      return { success: true, tabs };
     },
     getActiveTabId: () => activeTabId
   };
+
+  logAutomation('run-agent-task:init', { mode, prompt, activeTabId });
 
   // Initialize new runtime infrastructure
   try {
@@ -619,11 +655,6 @@ ipcMain.handle('run-agent-task', async (event, { prompt, currentUrl }) => {
       maxTokens: 128000
     });
 
-    // Create ToolManager and register all tools
-    const toolManager = new ToolManager(executionContext);
-    const tools = createAllTools(executionContext);
-    toolManager.registerMultiple(tools);
-
     // Set current task and start execution
     executionContext.setCurrentTask(prompt);
     const activeTab = getActiveTab();
@@ -631,107 +662,107 @@ ipcMain.handle('run-agent-task', async (event, { prompt, currentUrl }) => {
       executionContext.startExecution(activeTab.id);
     }
 
-    // Add initial user message
-    executionContext.messageManager.addHuman(prompt);
-
-    // Send initial status to UI
-    event.sender.send('agent-stream', {
-      type: 'status',
-      status: 'running',
-      toolCount: toolManager.count(),
-      tools: toolManager.getNames()
-    });
-
-    // Import AI SDK for agent execution
-    const { streamText } = require('ai');
-    const { anthropic } = require('@ai-sdk/anthropic');
-
-    // Get AI SDK compatible tools
-    const aiTools = toolManager.toAISDKFormat();
-
-    // Create model
-    const model = anthropic('claude-3-5-sonnet-20241022');
-
-    // System prompt
-    const systemPrompt = `You are a helpful browser automation agent. You can control a web browser and complete tasks for the user.
-
-Available tools: ${toolManager.getDescriptions()}
-
-Guidelines:
-- Use tools to interact with the browser
-- Take screenshots to see what's on the page
-- Use the done tool when you've completed the task
-- If you get stuck, use human_input to ask for help
-- Be thorough but efficient
-
-Current page: ${currentUrl}`;
-
-    // Stream the AI response with tool calls
-    let fullText = '';
-    const result = await streamText({
-      model,
-      messages: executionContext.messageManager.getMessages(),
-      tools: aiTools,
-      maxSteps: 20,
-      system: systemPrompt,
-      onChunk: ({ chunk }) => {
-        if (chunk.type === 'text-delta') {
-          fullText += chunk.textDelta;
-          event.sender.send('agent-stream', {
-            type: 'text-delta',
-            textDelta: chunk.textDelta,
-            fullText
-          });
-        }
-      },
-      onStepFinish: ({ stepType, toolCalls, toolResults }) => {
-        if (toolCalls && toolCalls.length > 0) {
-          event.sender.send('agent-stream', {
-            type: 'tool-calls',
-            toolCalls: toolCalls.map(tc => ({
-              name: tc.toolName,
-              args: tc.args
-            }))
-          });
-        }
-        if (toolResults && toolResults.length > 0) {
-          event.sender.send('agent-stream', {
-            type: 'tool-results',
-            results: toolResults.map(tr => ({
-              name: tr.toolName,
-              result: tr.result
-            }))
-          });
-        }
+    const orchestrator = new AgentOrchestrator({
+      onEvent: (payload) => {
+        event.sender.send('agent-stream', payload);
       }
     });
 
-    // Add AI response to message history
-    executionContext.messageManager.addAI(result.text);
+    const pubsub = executionContext.getPubSub();
+    const subscription = pubsub.subscribe((pubsubEvent) => {
+      event.sender.send('agent-stream', {
+        type: 'pubsub',
+        event: pubsubEvent
+      });
+    });
 
-    // End execution
-    executionContext.endExecution();
+    // Forward glow events to renderer
+    const glowService = executionContext.getGlowService();
+    const glowStartHandler = (glowEvent) => {
+      event.sender.send('agent-stream', {
+        type: 'glow',
+        action: 'start',
+        ...glowEvent
+      });
+    };
+    const glowStopHandler = (glowEvent) => {
+      event.sender.send('agent-stream', {
+        type: 'glow',
+        action: 'stop',
+        ...glowEvent
+      });
+    };
+    glowService.on('glow:start', glowStartHandler);
+    glowService.on('glow:stop', glowStopHandler);
 
-    // Get final metrics
+    // Forward log events to renderer
+    const logHandler = (logEvent) => {
+      event.sender.send('agent-stream', {
+        type: 'log',
+        ...logEvent
+      });
+    };
+    const metricHandler = (metricEvent) => {
+      event.sender.send('agent-stream', {
+        type: 'metric',
+        ...metricEvent
+      });
+    };
+    Logging.on('log', logHandler);
+    Logging.on('metric', metricHandler);
+
+    event.sender.send('agent-stream', {
+      type: 'status',
+      status: 'running',
+      mode
+    });
+
+    let agentResult;
+
+    try {
+      agentResult = await orchestrator.run({
+        mode,
+        prompt,
+        workflow,
+        metadata,
+        executionContext,
+        currentUrl
+      });
+      logAutomation('run-agent-task:complete', {
+        success: agentResult?.success !== false,
+        text: agentResult?.text?.slice?.(0, 200),
+        metrics: executionContext.getExecutionMetrics()
+      });
+    } finally {
+      if (subscription && typeof subscription.unsubscribe === 'function') {
+        subscription.unsubscribe();
+      }
+      glowService.off('glow:start', glowStartHandler);
+      glowService.off('glow:stop', glowStopHandler);
+      Logging.off('log', logHandler);
+      Logging.off('metric', metricHandler);
+      executionContext.endExecution();
+    }
+
     const metrics = executionContext.getExecutionMetrics();
 
-    // Send completion
     event.sender.send('agent-stream', {
       type: 'complete',
-      text: result.text,
+      text: agentResult?.text || '',
       metrics,
       todoList: executionContext.todoStore.getAll()
     });
 
     return {
-      success: true,
-      text: result.text,
+      success: agentResult?.success !== false,
+      text: agentResult?.text || '',
       metrics,
-      usage: result.usage
+      usage: agentResult?.usage
     };
 
   } catch (error) {
     console.error('Agent task error:', error);
+    logAutomation('run-agent-task:error', { error: error.message, stack: error.stack });
     event.sender.send('agent-stream', {
       type: 'error',
       error: error.message

@@ -19,60 +19,60 @@ Comprehensive port of BrowserOS agent infrastructure from Chrome extension to El
 
 #### 1. Runtime Infrastructure
 **Source:** `src/lib/runtime/`
-- [ ] `ExecutionContext.ts` - Core execution context
-- [ ] `BrowserContext.ts` - Browser/page management
-- [ ] `MessageManager.ts` - Message history
-- [ ] `PubSub.ts` - Event system
+- [x] `ExecutionContext.ts` - Core execution context (ported as `src/agent/ExecutionContext.js`)
+- [x] `BrowserContext.ts` - Browser/page management (ported as `src/agent/BrowserContext.js`)
+- [x] `MessageManager.ts` - Message history (ported as `src/agent/MessageManager.js`)
+- [x] `PubSub.ts` - Event system (ported as `src/agent/PubSub.js` + `src/agent/PubSubChannel.js`)
 
 #### 2. Tool Infrastructure  
 **Source:** `src/lib/tools/`
-- [ ] `ToolInterface.ts` - Tool type definitions
-- [ ] `ToolManager.ts` - Tool registry
+- [x] `ToolInterface.ts` - Tool type definitions (ported as `src/agent/ToolInterface.js`)
+- [x] `ToolManager.ts` - Tool registry (ported as `src/agent/ToolManager.js`)
 
 #### 3. Browser Automation Tools
 **Source:** `src/lib/tools/`
 
 **Essential (Port First):**
-- [ ] `Click.ts` - Click elements
-- [ ] `Type.ts` - Type text
-- [ ] `Navigate.ts` - Navigate URLs
-- [ ] `Screenshot.ts` - Capture screenshots
-- [ ] `Extract.ts` - Extract page data
-- [ ] `Done.ts` - Complete task
-- [ ] `Wait.ts` - Wait for conditions
-- [ ] `Scroll.ts` - Scroll page
-- [ ] `Key.ts` - Press keys
+- [x] `Click.ts` - Click elements (ported as `src/agent/tools/click.js`)
+- [x] `Type.ts` - Type text (ported as `src/agent/tools/type.js`)
+- [x] `Navigate.ts` - Navigate URLs (ported as `src/agent/tools/navigate.js`)
+- [x] `Screenshot.ts` - Capture screenshots (ported as `src/agent/tools/screenshot.js`)
+- [x] `Extract.ts` - Extract page data (ported as `src/agent/tools/extract.js`)
+- [x] `Done.ts` - Complete task (ported as `src/agent/tools/done.js`)
+- [x] `Wait.ts` - Wait for conditions (ported as `src/agent/tools/wait.js`)
+- [x] `Scroll.ts` - Scroll page (ported as `src/agent/tools/scroll.js`)
+- [x] `Key.ts` - Press keys (ported as `src/agent/tools/key.js`)
 
 **Advanced (Port Later):**
-- [ ] `VisualClick.ts` - Click by visual coordinates
-- [ ] `VisualType.ts` - Type at coordinates
-- [ ] `ClickAtCoordinates.ts`
-- [ ] `TypeAtCoordinates.ts`
-- [ ] `GrepElements.ts` - Search page elements
-- [ ] `Clear.ts` - Clear inputs
+- [x] `VisualClick.ts` - Click by visual coordinates (ported as `src/agent/tools/visualClick.js`)
+- [x] `VisualType.ts` - Type at coordinates (ported as `src/agent/tools/visualType.js`)
+- [x] `ClickAtCoordinates.ts` (ported as `src/agent/tools/clickAtCoordinates.js`)
+- [x] `TypeAtCoordinates.ts` (ported as `src/agent/tools/typeAtCoordinates.js`)
+- [x] `GrepElements.ts` - Search page elements (ported as `src/agent/tools/grepElements.js`)
+- [x] `Clear.ts` - Clear inputs (ported as `src/agent/tools/clear.js`)
 
 **Tab Management:**
-- [ ] `Tabs.ts` - List tabs
-- [ ] `TabOpen.ts` - Open new tab
-- [ ] `TabFocus.ts` - Switch tabs
-- [ ] `TabClose.ts` - Close tabs
-- [ ] `GetSelectedTabsTool.ts`
-- [ ] `GroupTabsTool.ts`
+- [x] `Tabs.ts` - List tabs (ported as `src/agent/tools/tabs.js`)
+- [x] `TabOpen.ts` - Open new tab (ported as `src/agent/tools/tabOpen.js`)
+- [x] `TabFocus.ts` - Switch tabs (ported as `src/agent/tools/tabFocus.js`)
+- [x] `TabClose.ts` - Close tabs (ported as `src/agent/tools/tabClose.js`)
+- [x] `GetSelectedTabsTool.ts` (ported as `src/agent/tools/getSelectedTabsTool.js`)
+- [x] `GroupTabsTool.ts` (ported as `src/agent/tools/groupTabsTool.js` - logical grouping only)
 
 **Task Management:**
-- [ ] `TodoSet.ts` - Set TODO list
-- [ ] `TodoGet.ts` - Get TODO list
-- [ ] `Planner.ts` - Planning tool
-- [ ] `PlannerPrompts.ts`
+- [x] `TodoSet.ts` - Set TODO list (ported as `src/agent/tools/todoSet.js`)
+- [x] `TodoGet.ts` - Get TODO list (ported as `src/agent/tools/todoGet.js`)
+- [x] `Planner.ts` - Planning tool (ported as `src/agent/tools/planner.js`)
+- [x] `PlannerPrompts.ts` (ported as `src/agent/tools/plannerPrompts.js`)
 
 **User Interaction:**
-- [ ] `HumanInput.ts` - Request human input
-- [ ] `Celebration.ts` - Success celebrations
+- [x] `HumanInput.ts` - Request human input (ported as `src/agent/tools/humanInput.js`)
+- [x] `Celebration.ts` - Success celebrations (ported as `src/agent/tools/celebration.js`)
 
 **Meta Tools:**
-- [ ] `BrowserOSInfoTool.ts` - System info
-- [ ] `DateTool.ts` - Date/time operations
-- [ ] `MCPTool.ts` - MCP server integration
+- [x] `BrowserOSInfoTool.ts` - System info (ported as `src/agent/tools/browserOSInfoTool.js`)
+- [x] `DateTool.ts` - Date/time operations (ported as `src/agent/tools/dateTool.js`)
+- [x] `MCPTool.ts` - MCP server integration (ported as `src/agent/tools/mcpTool.js` + `src/agent/mcp/*`)
 
 ## Phase 3: Agent Classes
 
@@ -104,8 +104,8 @@ Comprehensive port of BrowserOS agent infrastructure from Chrome extension to El
 
 ### PubSub System
 **Source:** `src/lib/pubsub/`
-- [ ] `PubSub.ts` - Event publishing
-- [ ] Message types and interfaces
+- [x] `PubSub.ts` - Event publishing (ported as `src/agent/PubSub.js` + `src/agent/PubSubChannel.js`)
+- [ ] Message types and interfaces (simplified inline in Electron version)
 
 ### Utilities
 **Source:** `src/lib/utils/`
@@ -183,9 +183,9 @@ Comprehensive port of BrowserOS agent infrastructure from Chrome extension to El
 - [ ] All essential tools working in Electron
 - [ ] ChatAgent fully functional
 - [ ] LocalAgent operational for automation tasks
-- [ ] Tab management working
-- [ ] Screenshot & extraction working
-- [ ] Streaming responses working
+- [x] Tab management working
+- [x] Screenshot & extraction working
+- [x] Streaming responses working
 - [ ] Error handling robust
 - [ ] Performance acceptable
 
@@ -214,9 +214,11 @@ Comprehensive port of BrowserOS agent infrastructure from Chrome extension to El
 - IPC bridge
 - Basic AI SDK 6 integration
 - 7 basic tools in tools.js
+- ExecutionContext/BrowserContext/ToolManager/MessageManager ported
+- Essential tools (Navigate, Click, Type, Screenshot, Extract, Done, Wait) ported
+- Tab management (Tabs, TabOpen, TabFocus, TabClose) ported
 
 **Next Steps:**
-1. Port ExecutionContext
-2. Port ToolManager
-3. Port essential tools one by one
-4. Wire up to existing IPC handlers
+1. Port ChatAgent/LocalAgent/BrowserAgent/TeachAgent classes (or design Electron-specific agent wrappers) on top of the existing ExecutionContext/ToolManager/AI SDK runtime
+2. (Optional) Flesh out PubSub message type helpers and any additional UI wiring for human input and planner events
+3. Add planner prompts/settings UI and test end-to-end

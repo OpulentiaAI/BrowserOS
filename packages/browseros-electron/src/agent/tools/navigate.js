@@ -24,8 +24,7 @@ function createNavigateTool(context) {
         context.incrementToolUsageMetrics('navigate');
 
         const page = await context.browserContext.getCurrentPage();
-        await page.navigateTo(url);
-        await page.waitForStability();
+        await page.navigate(url);
 
         return toolSuccess(`Successfully navigated to ${url}`);
       } catch (error) {

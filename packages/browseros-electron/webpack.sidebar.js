@@ -29,6 +29,13 @@ module.exports = {
           'css-loader',
           'postcss-loader'
         ]
+      },
+      {
+        test: /\.(svg|png|jpg|jpeg|gif)$/,
+        type: 'asset/resource',
+        generator: {
+          filename: 'assets/[name][ext]'
+        }
       }
     ]
   },

@@ -32,17 +32,30 @@ function createTypeTool(context) {
         context.incrementToolUsageMetrics('type');
 
         const page = await context.browserContext.getCurrentPage();
-        
-        if (nodeId) {
-          await page.inputText(nodeId, text);
-          await page.waitForStability();
-          return toolSuccess(`Successfully typed "${text}" into element ${nodeId}`);
-        } else if (selector) {
-          await page.type(selector, text);
-          await page.waitForStability();
-          return toolSuccess(`Successfully typed "${text}" into ${selector}`);
+
+        if (selector) {
+          // Use JavaScript to type into the element by selector
+          const script = `
+            (function() {
+              const element = document.querySelector('${selector.replace(/'/g, "\\'")}');
+              if (element) {
+                element.focus();
+                element.value = '${text.replace(/'/g, "\\'")}';
+                element.dispatchEvent(new Event('input', { bubbles: true }));
+                element.dispatchEvent(new Event('change', { bubbles: true }));
+                return { success: true };
+              }
+              return { success: false, error: 'Element not found' };
+            })();
+          `;
+          const result = await page.evaluate(script);
+          if (result && result.success) {
+            return toolSuccess(`Successfully typed "${text}" into ${selector}`);
+          } else {
+            return toolError(result?.error || 'Failed to type into element');
+          }
         } else {
-          return toolError('Must provide either selector or nodeId');
+          return toolError('Selector is required for typing into elements');
         }
       } catch (error) {
         context.incrementMetric('errors');

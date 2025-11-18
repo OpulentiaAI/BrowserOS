@@ -1,12 +1,14 @@
 import React, { useEffect, useState } from 'react';
 import MessageList from './MessageList';
-import ChatInput from './ChatInput';
 import StatusPanel from './StatusPanel';
 import ToolCallIndicator from './ToolCallIndicator';
 import ErrorMessage from './ErrorMessage';
+import GlowIndicator from './GlowIndicator';
+import LogPanel from './LogPanel';
+import TeachModePanel from './TeachModePanel';
 import { useChatStore, selectMessages, selectIsProcessing } from '../stores/chatStore';
 
-function Chat({ currentUrl }) {
+function Chat({ currentUrl, initialMessage, onMessageSent }) {
   const messages = useChatStore(selectMessages);
   const isProcessing = useChatStore(selectIsProcessing);
   const addMessage = useChatStore((state) => state.addMessage);
@@ -19,23 +21,34 @@ function Chat({ currentUrl }) {
   const [activeToolCalls, setActiveToolCalls] = useState([]);
   const [lastError, setLastError] = useState(null);
   const [lastPrompt, setLastPrompt] = useState(null);
+  
+  // Track runtime events
+  const [activeGlows, setActiveGlows] = useState([]); // {tabId, toolName, executionId, timestamp}
+  const [logEvents, setLogEvents] = useState([]); // {source, message, level, timestamp}
+  const [metricEvents, setMetricEvents] = useState([]); // {event, properties, timestamp}
+  const [teachModeState, setTeachModeState] = useState(null); // {status, workflow, currentStep, etc.}
+  const [mcpStatus, setMcpStatus] = useState(null); // {servers, activeServer, etc.}
 
+  // Handle initial message from quick actions
   useEffect(() => {
-    if (messages.length === 0) {
-      addMessage({
-        msgId: 'assistant-welcome',
-        role: 'assistant',
-        content: 'Hi! I\'m your BrowserOS copilot. Ask me to summarize this page, extract data, or automate a task.'
-      });
+    if (initialMessage && !isProcessing) {
+      handleSendMessage(initialMessage);
+      if (onMessageSent) {
+        onMessageSent();
+      }
     }
-  }, [messages.length, addMessage]);
+  }, [initialMessage]);
 
   useEffect(() => {
     // Listen for streaming agent responses
     const unsubscribe = window.electron.onAgentStream((data) => {
       if (data.type === 'status') {
-        // Initial status update - clear any previous error
+        // Initial status update - clear any previous error and runtime state
         setLastError(null);
+        setActiveGlows([]);
+        setLogEvents([]);
+        setMetricEvents([]);
+        setTeachModeState(null);
         console.log('Agent started with tools:', data.tools);
       } else if (data.type === 'text-delta') {
         // Stream text updates to the current assistant message
@@ -52,9 +65,45 @@ function Chat({ currentUrl }) {
         // Tool results returned - clear active tools
         setActiveToolCalls([]);
         console.log('Tool results:', data.results);
+      } else if (data.type === 'glow') {
+        // Glow animation start/stop
+        if (data.action === 'start') {
+          setActiveGlows((prev) => [
+            ...prev.filter((g) => g.tabId !== data.tabId), // Remove any existing glow for this tab
+            { tabId: data.tabId, toolName: data.toolName, executionId: data.executionId, timestamp: Date.now() }
+          ]);
+        } else if (data.action === 'stop') {
+          setActiveGlows((prev) => prev.filter((g) => g.tabId !== data.tabId));
+        }
+      } else if (data.type === 'log') {
+        // Logging event
+        setLogEvents((prev) => [...prev, { source: data.source, message: data.message, level: data.level, timestamp: data.timestamp }].slice(-100)); // Keep last 100 logs
+      } else if (data.type === 'metric') {
+        // Metric event
+        setMetricEvents((prev) => [...prev, { event: data.event, properties: data.properties, timestamp: data.timestamp }].slice(-50)); // Keep last 50 metrics
+      } else if (data.type === 'pubsub') {
+        // PubSub event - handle teach-mode and MCP events
+        const pubsubEvent = data.event;
+        if (pubsubEvent.type === 'teach:thinking' || pubsubEvent.type === 'teach:workflow_ready' || 
+            pubsubEvent.type === 'teach:workflow_complete' || pubsubEvent.type === 'teach:human_input_requested') {
+          // Teach-mode event
+          setTeachModeState({
+            type: pubsubEvent.type,
+            payload: pubsubEvent.payload,
+            timestamp: Date.now()
+          });
+        } else if (pubsubEvent.type?.startsWith('mcp:')) {
+          // MCP status event
+          setMcpStatus({
+            type: pubsubEvent.type,
+            payload: pubsubEvent.payload,
+            timestamp: Date.now()
+          });
+        }
       } else if (data.type === 'complete') {
         // Agent task completed
         setActiveToolCalls([]);
+        setActiveGlows([]); // Clear any remaining glows
         upsertMessage({
           msgId: streamMsgIdRef.current,
           role: 'assistant',
@@ -71,6 +120,7 @@ function Chat({ currentUrl }) {
       } else if (data.type === 'error') {
         // Error occurred - show enhanced error message
         setActiveToolCalls([]);
+        setActiveGlows([]);
         setLastError({
           message: data.error,
           timestamp: Date.now()
@@ -143,7 +193,16 @@ function Chat({ currentUrl }) {
   return (
     <div className="chat-container">
       <MessageList messages={messages} isProcessing={isProcessing} />
-      <ToolCallIndicator 
+      <GlowIndicator
+        glows={activeGlows}
+        visible={activeGlows.length > 0}
+      />
+      <TeachModePanel
+        teachState={teachModeState}
+        mcpStatus={mcpStatus}
+        visible={!!(teachModeState || mcpStatus)}
+      />
+      <ToolCallIndicator
         toolCalls={activeToolCalls}
         visible={activeToolCalls.length > 0}
       />
@@ -152,12 +211,15 @@ function Chat({ currentUrl }) {
         onRetry={handleRetry}
         onDismiss={handleDismissError}
       />
-      <StatusPanel 
-        metrics={currentMetrics} 
+      <StatusPanel
+        metrics={currentMetrics}
         todoList={currentTodoList}
         visible={!!(currentMetrics || currentTodoList)}
       />
-      <ChatInput onSubmit={handleSendMessage} disabled={isProcessing} />
+      <LogPanel
+        logs={logEvents}
+        visible={logEvents.length > 0}
+      />
     </div>
   );
 }

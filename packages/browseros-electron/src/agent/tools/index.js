@@ -25,11 +25,21 @@ const { createTabCloseTool } = require('./tabClose');
 // TODO/Planning
 const { createTodoSetTool } = require('./todoSet');
 const { createTodoGetTool } = require('./todoGet');
+const { createPlannerTool } = require('./planner');
 
 // Advanced
 const { createHumanInputTool } = require('./humanInput');
 const { createVisualClickTool } = require('./visualClick');
 const { createVisualTypeTool } = require('./visualType');
+const { createClickAtCoordinatesTool } = require('./clickAtCoordinates');
+const { createTypeAtCoordinatesTool } = require('./typeAtCoordinates');
+const { createGrepElementsTool } = require('./grepElements');
+const { createGetSelectedTabsTool } = require('./getSelectedTabsTool');
+const { createGroupTabsTool } = require('./groupTabsTool');
+const { createCelebrationTool } = require('./celebration');
+const { createDateTool } = require('./dateTool');
+const { createBrowserOSInfoTool } = require('./browserOSInfoTool');
+const { createMCPTool } = require('./mcpTool');
 
 /**
  * Create all tools for a given execution context
@@ -59,11 +69,21 @@ function createAllTools(context) {
     // TODO/Planning
     createTodoSetTool(context),
     createTodoGetTool(context),
+    createPlannerTool(context),
     
     // Advanced
     createHumanInputTool(context),
     createVisualClickTool(context),
-    createVisualTypeTool(context)
+    createVisualTypeTool(context),
+    createClickAtCoordinatesTool(context),
+    createTypeAtCoordinatesTool(context),
+    createGrepElementsTool(context),
+    createGetSelectedTabsTool(context),
+    createGroupTabsTool(context),
+    createCelebrationTool(context),
+    createDateTool(context),
+    createBrowserOSInfoTool(context),
+    createMCPTool(context)
   ];
 }
 
@@ -118,9 +138,19 @@ module.exports = {
   createTabCloseTool,
   createTodoSetTool,
   createTodoGetTool,
+  createPlannerTool,
   createHumanInputTool,
   createVisualClickTool,
   createVisualTypeTool,
+  createClickAtCoordinatesTool,
+  createTypeAtCoordinatesTool,
+  createGrepElementsTool,
+  createGetSelectedTabsTool,
+  createGroupTabsTool,
+  createCelebrationTool,
+  createDateTool,
+  createBrowserOSInfoTool,
+  createMCPTool,
   
   // Batch creators
   createAllTools,

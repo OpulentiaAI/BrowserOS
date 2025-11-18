@@ -38,9 +38,11 @@ function createVisualClickTool(context) {
 
         // Take screenshot with exact viewport dimensions
         const screenshot = await page.takeScreenshot('large');
-        if (!screenshot) {
+        if (!screenshot || screenshot.success === false) {
           return toolError('Failed to capture screenshot for visual click');
         }
+
+        const screenshotData = screenshot.data || screenshot;
 
         // Call Moondream API
         const response = await fetch('https://api.moondream.ai/v1/point', {
@@ -50,7 +52,7 @@ function createVisualClickTool(context) {
             'Content-Type': 'application/json'
           },
           body: JSON.stringify({
-            image_url: screenshot,
+            image_url: screenshotData,
             object: instruction
           })
         });
