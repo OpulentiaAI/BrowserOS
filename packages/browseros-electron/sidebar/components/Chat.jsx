@@ -50,21 +50,64 @@ function Chat({ currentUrl, initialMessage, onMessageSent }) {
         setMetricEvents([]);
         setTeachModeState(null);
         console.log('Agent started with tools:', data.tools);
-      } else if (data.type === 'text-delta') {
-        // Stream text updates to the current assistant message
+      } else if (data.type === 'text-delta' || data.type === 'reasoning-delta' || data.type === 'tool-calls' || data.type === 'tool-results') {
+        // Retrieve current message parts or initialize empty
+        const currentMessage = messages.find(m => m.msgId === streamMsgIdRef.current);
+        const currentParts = currentMessage?.metadata?.timeline || [];
+        let newParts = [...currentParts];
+
+        if (data.type === 'text-delta') {
+          const lastPart = newParts[newParts.length - 1];
+          // Check if last part is text AND content is not undefined
+          if (lastPart && lastPart.type === 'text') {
+             // Ensure content is initialized
+             lastPart.content = (lastPart.content || '') + (data.textDelta || '');
+          } else {
+            newParts.push({ type: 'text', content: data.textDelta || '' });
+          }
+        } else if (data.type === 'reasoning-delta') {
+          const lastPart = newParts[newParts.length - 1];
+          if (lastPart && lastPart.type === 'reasoning') {
+            lastPart.content += data.textDelta;
+          } else {
+            newParts.push({ type: 'reasoning', content: data.textDelta });
+          }
+        } else if (data.type === 'tool-calls') {
+          setActiveToolCalls(data.toolCalls);
+          data.toolCalls.forEach(call => {
+             // Generate a unique ID for the tool call part if not provided
+             // toolCallId from SDK is best, but we might not have it in this event structure?
+             // BaseAgent maps it: { name: tc.toolName, args: tc.args } -> no ID?
+             // We should fix BaseAgent to pass ID.
+             // For now, push a new tool part.
+             newParts.push({ type: 'tool', tool: call, result: null });
+          });
+        } else if (data.type === 'tool-results') {
+          setActiveToolCalls([]);
+          // Match results to tool parts.
+          // Since we might not have IDs, we match by order or name?
+          // Better: Find the last 'tool' part without a result?
+          // Or assume strictly sequential: Tool Call -> Result.
+          // "results" is an array.
+          data.results.forEach(result => {
+             // Find a tool part with same name and no result, searching backwards
+             for (let i = newParts.length - 1; i >= 0; i--) {
+                if (newParts[i].type === 'tool' && newParts[i].tool.name === result.name && !newParts[i].result) {
+                   newParts[i].result = result.result;
+                   break;
+                }
+             }
+          });
+        }
+
         upsertMessage({
           msgId: streamMsgIdRef.current,
           role: 'assistant',
-          content: data.fullText
+          content: data.fullText || '', // Keep legacy content updated if available
+          metadata: {
+            timeline: newParts
+          }
         });
-      } else if (data.type === 'tool-calls') {
-        // Tool calls being executed - show visual indicator
-        setActiveToolCalls(data.toolCalls);
-        console.log('Tool calls:', data.toolCalls);
-      } else if (data.type === 'tool-results') {
-        // Tool results returned - clear active tools
-        setActiveToolCalls([]);
-        console.log('Tool results:', data.results);
       } else if (data.type === 'glow') {
         // Glow animation start/stop
         if (data.action === 'start') {

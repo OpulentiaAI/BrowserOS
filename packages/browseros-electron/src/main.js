@@ -637,7 +637,18 @@ ipcMain.handle('run-agent-task', async (event, { prompt, currentUrl, mode = 'bro
       logAutomation('listTabs', { tabs });
       return { success: true, tabs };
     },
-    getActiveTabId: () => activeTabId
+    getActiveTabId: () => activeTabId,
+    sendInputEvent: async (event) => {
+      const activeTab = getActiveTab();
+      if (!activeTab) return { success: false, error: 'No active tab' };
+      try {
+        await activeTab.view.webContents.sendInputEvent(event);
+        return { success: true };
+      } catch (error) {
+        logAutomation('sendInputEvent:error', { error: error.message });
+        return { success: false, error: error.message };
+      }
+    }
   };
 
   logAutomation('run-agent-task:init', { mode, prompt, activeTabId });

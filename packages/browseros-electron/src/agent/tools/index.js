@@ -40,6 +40,7 @@ const { createCelebrationTool } = require('./celebration');
 const { createDateTool } = require('./dateTool');
 const { createBrowserOSInfoTool } = require('./browserOSInfoTool');
 const { createMCPTool } = require('./mcpTool');
+const { createComputerTool } = require('./computer');
 
 /**
  * Create all tools for a given execution context
@@ -59,6 +60,7 @@ function createAllTools(context) {
     createScrollTool(context),
     createKeyTool(context),
     createClearTool(context),
+    createComputerTool(context), // New unified tool
     
     // Tab management
     createTabsTool(context),
@@ -132,6 +134,7 @@ module.exports = {
   createScrollTool,
   createKeyTool,
   createClearTool,
+  createComputerTool,
   createTabsTool,
   createTabOpenTool,
   createTabFocusTool,

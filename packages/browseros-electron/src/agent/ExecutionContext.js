@@ -12,6 +12,7 @@ const { PubSub } = require('./PubSub');
 const { KlavisAPIManager } = require('./mcp/KlavisAPIManager');
 const { Logging } = require('./utils/Logging');
 const { GlowAnimationService } = require('./services/GlowAnimationService');
+const { TaskManager } = require('./TaskManager');
 
 class ExecutionContext {
   constructor(options = {}) {
@@ -20,6 +21,7 @@ class ExecutionContext {
     this.browserContext = options.browserContext;
     this.messageManager = options.messageManager || new MessageManager();
     this.todoStore = options.todoStore || new TodoStore();
+    this.taskManager = new TaskManager(); // Initialize TaskManager
     Logging.initialize({ debugMode: process.env.BROWSEROS_DEBUG === 'true' });
     this._glowService = options.glowService || GlowAnimationService.getInstance();
     

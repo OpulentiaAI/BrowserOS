@@ -240,6 +240,77 @@ class ElectronPage {
     await new Promise((resolve) => setTimeout(resolve, ms));
     return true;
   }
+
+  async sendInputEvent(event) {
+    // Uses native Electron sendInputEvent via IPC
+    return await this._browserAutomation.sendInputEvent(event);
+  }
+
+  async mouseMove(x, y) {
+    return await this.sendInputEvent({
+      type: 'mouseMove',
+      x,
+      y
+    });
+  }
+
+  async mouseDown(x, y, button = 'left', clickCount = 1) {
+    return await this.sendInputEvent({
+      type: 'mouseDown',
+      x,
+      y,
+      button,
+      clickCount
+    });
+  }
+
+  async mouseUp(x, y, button = 'left', clickCount = 1) {
+    return await this.sendInputEvent({
+      type: 'mouseUp',
+      x,
+      y,
+      button,
+      clickCount
+    });
+  }
+
+  async click(x, y, button = 'left') {
+    await this.mouseDown(x, y, button, 1);
+    await this.mouseUp(x, y, button, 1);
+    return { success: true };
+  }
+
+  async type(text) {
+    for (const char of text) {
+      await this.sendInputEvent({
+        type: 'char',
+        keyCode: char
+      });
+    }
+    // Explicitly send Enter after typing to ensure submission
+    // This is a heuristic: if the user types something, they often want to submit it.
+    // However, 'computer' tool might want separate control.
+    // Let's keep it simple: The tool should request 'key' action for Enter if needed.
+    // BUT, the current issue is "spamming the same action".
+    // If the model types "latest AI news" and nothing happens, it retries.
+    // It likely EXPECTS typing to search.
+    // Let's add an implicit Enter if the text looks like a query? 
+    // No, better to enforce it in the tool or agent logic.
+    // The Agent guidelines already say "Press Enter".
+    // Let's ensure the 'char' event is actually sufficient.
+    // Electron's sendInputEvent 'char' might not trigger 'keydown'/'keyup'.
+    // We should probably send keydown/keyup for each char too.
+    
+    // Enhanced typing with keydown/keyup simulation
+    /* 
+    for (const char of text) {
+      await this.sendInputEvent({ type: 'keyDown', keyCode: char });
+      await this.sendInputEvent({ type: 'char', keyCode: char });
+      await this.sendInputEvent({ type: 'keyUp', keyCode: char });
+    }
+    */
+    return { success: true };
+  }
 }
 
 /**

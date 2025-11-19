@@ -70,117 +70,108 @@ class BaseAgent {
     const toolManager = this.getToolManager();
     const aiTools = toolManager.toAISDKFormat();
 
-    // Use AI Gateway if available, fallback to OpenAI
+    // Use AI Gateway if available, fallback to OpenAI or OpenRouter
     let model;
     if (process.env.AI_GATEWAY_API_KEY) {
       model = openai('gpt-4o', {
         apiKey: process.env.AI_GATEWAY_API_KEY,
         baseURL: 'https://api.voidctrl.com/v1'
       });
+    } else if (process.env.OPENROUTER_API_KEY) {
+      model = openai('google/gemini-3-pro-preview', {
+        apiKey: process.env.OPENROUTER_API_KEY,
+        baseURL: 'https://openrouter.ai/api/v1'
+      });
     } else if (process.env.OPENAI_API_KEY) {
       model = openai('gpt-4o');
     } else {
-      throw new Error('No AI model provider configured. Set AI_GATEWAY_API_KEY or OPENAI_API_KEY');
+      throw new Error('No AI model provider configured. Set AI_GATEWAY_API_KEY, OPENROUTER_API_KEY, or OPENAI_API_KEY');
     }
 
     const context = this.executionContext;
     const messages = context.messageManager.getMessages();
-    let fullText = '';
 
     Logging.log(this.loggerSource, `Starting executor run (maxSteps=${maxSteps})`, 'info');
-    console.log('DEBUG: BaseAgent calling streamText...');
 
-    const result = streamText({
-      model,
-      system: systemPrompt,
-      messages,
-      tools: aiTools,
-      maxSteps,
-      onChunk: ({ chunk }) => {
-        // console.log('DEBUG: onChunk', chunk.type);
-        if (chunk.type === 'text-delta') {
-          fullText += chunk.textDelta;
-          this.emitEvent({
-            type: 'text-delta',
-            textDelta: chunk.textDelta,
-            fullText
-          });
-        }
-      },
-      onStepFinish: ({ toolCalls, toolResults }) => {
-        console.log('DEBUG: onStepFinish triggered');
-        console.log('BaseAgent onStepFinish toolCalls:', JSON.stringify(toolCalls?.map(tc => tc.toolName)));
-        console.log('BaseAgent onStepFinish toolResults:', JSON.stringify(toolResults?.map(tr => tr.toolName)));
-
-        if (toolCalls && toolCalls.length > 0) {
-          this.emitEvent({
-            type: 'tool-calls',
-            toolCalls: toolCalls.map((tc) => ({
-              name: tc.toolName,
-              args: tc.args
-            }))
-          });
-        }
-        if (toolResults && toolResults.length > 0) {
-          this.emitEvent({
-            type: 'tool-results',
-            results: toolResults.map((tr) => ({
-              name: tr.toolName,
-              result: tr.result
-            }))
-          });
-        }
-      }
-    });
-
-    console.log('DEBUG: streamText returned (no await yet)');
-    // Wait for execution to complete to ensure fullText is populated
-    // In AI SDK 3.x, we MUST consume the stream (e.g. result.text) before result.toolResults will resolve.
-    // If we await toolResults first, it might hang because the stream isn't being pulled.
-    
-    let finalResponse = '';
-    
-    // Promise.all approach to ensure we don't deadlock:
-    // - Start consuming text (which drives the stream)
-    // - Wait for toolResults (which resolves when stream ends)
     try {
-      const textPromise = (async () => {
-        if (result.text && typeof result.text.then === 'function') {
-          return await result.text;
+      const result = streamText({
+        model,
+        system: systemPrompt,
+        messages,
+        tools: aiTools,
+        maxSteps,
+        providerOptions: {
+          openai: {
+            reasoning: {
+              effort: 'low'
+            }
+          }
+        },
+        onChunk: ({ chunk }) => {
+          if (chunk.type === 'text-delta') {
+            this.emitEvent({
+              type: 'text-delta',
+              textDelta: chunk.textDelta,
+              fullText: '' // We don't track full text accumulation here for event, consumer can accumulate
+            });
+          } else if (chunk.type === 'reasoning') {
+            this.emitEvent({
+              type: 'reasoning-delta',
+              textDelta: chunk.textDelta
+            });
+          }
+        },
+        onStepFinish: ({ toolCalls, toolResults }) => {
+          if (toolCalls && toolCalls.length > 0) {
+            this.emitEvent({
+              type: 'tool-calls',
+              toolCalls: toolCalls.map((tc) => ({
+                name: tc.toolName,
+                args: tc.args
+              }))
+            });
+            this.publishThinking(`Executing ${toolCalls.length} tool(s): ${toolCalls.map(t => t.toolName).join(', ')}...`);
+          }
+          if (toolResults && toolResults.length > 0) {
+            this.emitEvent({
+              type: 'tool-results',
+              results: toolResults.map((tr) => ({
+                name: tr.toolName,
+                result: tr.result,
+                args: tr.args // Include args for context/history
+              }))
+            });
+          }
         }
-        return result.text || '';
-      })();
+      });
 
-      const toolResultsPromise = (async () => {
-        if (result.toolResults && typeof result.toolResults.then === 'function') {
-          return await result.toolResults;
-        }
-        return result.toolResults;
-      })();
-
-      // Wait for both
-      const [textResult] = await Promise.all([textPromise, toolResultsPromise]);
-      finalResponse = textResult;
+      // Wait for the full execution to complete
+      const fullText = await result.text;
+      const toolResults = await result.toolResults;
+      const usage = await result.usage;
       
-      if (!fullText && finalResponse) {
-        fullText = finalResponse;
+      // Update message history with the new interaction steps
+      const response = await result.response;
+      const newMessages = response.messages;
+      
+      // Add all new messages (assistant and tool) to history directly to preserve structure (e.g. tool_calls)
+      for (const msg of newMessages) {
+        context.messageManager.add(msg);
       }
-    } catch (err) {
-      console.error('Error consuming stream/tools:', err);
+      
+      Logging.log(this.loggerSource, 'Executor run completed', 'info');
+
+      return {
+        fullText,
+        toolResults,
+        usage,
+        toolCalls: await result.toolCalls
+      };
+
+    } catch (error) {
+      Logging.log(this.loggerSource, `Executor error: ${error.message}`, 'error');
+      throw error;
     }
-
-    context.messageManager.addAI(fullText);
-    Logging.log(this.loggerSource, 'Executor run completed', 'info');
-
-    // Attach accumulated text to the result object for convenience
-    // (since result.text is a stream/iterator in AI SDK 3.x)
-    Object.defineProperty(result, 'fullText', {
-      value: fullText,
-      writable: true,
-      enumerable: true
-    });
-
-    return result;
   }
 
   _wrapTool(tool) {

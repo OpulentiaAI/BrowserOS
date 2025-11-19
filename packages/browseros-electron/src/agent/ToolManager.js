@@ -1,3 +1,5 @@
+const { tool: aiSDKTool, jsonSchema } = require('ai');
+
 /**
  * ToolManager for Electron agents.
  * 
@@ -96,9 +98,8 @@ class ToolManager {
         ? tool.parameters
         : { type: 'object', properties: {} };
 
-      // In AI SDK 6 Beta, schemas should be provided as pure JSON Schema objects.
-      // Wrapping with jsonSchema() (used for Zod conversion) can strip the `type`,
-      // resulting in invalid schemas (type: "None"). We pass the schema directly.
+      // In AI SDK 6 Beta, tools expect a 'parameters' field which is a Zod schema or a JSON schema.
+      // We provide the JSON schema directly.
       const wrappedParameters = {
         type: 'object',
         properties: {},
@@ -111,11 +112,11 @@ class ToolManager {
         wrappedParameters.required = Object.values(wrappedParameters.required);
       }
 
-      aiTools[name] = {
+      aiTools[name] = aiSDKTool({
         description: tool.description,
-        parameters: wrappedParameters,
+        parameters: jsonSchema(wrappedParameters),
         execute: tool.execute
-      };
+      });
     }
     return aiTools;
   }
