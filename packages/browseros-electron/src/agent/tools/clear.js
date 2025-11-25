@@ -27,8 +27,11 @@ function createClearTool(context) {
         context.incrementToolUsageMetrics('clear');
 
         const page = await context.browserContext.getCurrentPage();
+        if (!page) {
+          return toolError('No active page to interact with');
+        }
 
-        if (nodeId) {
+        if (nodeId !== undefined && nodeId !== null) {
           await page.clearElement(nodeId);
           await page.waitForStability();
           return toolSuccess(`Successfully cleared element ${nodeId}`);

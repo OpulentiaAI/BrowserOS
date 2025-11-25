@@ -12,8 +12,8 @@ function createTabCloseTool(context) {
       type: 'object',
       properties: {
         tabId: {
-          type: 'string',
-          description: 'ID of the tab to close'
+          type: 'number',
+          description: 'ID of the tab to close (numeric tab ID)'
         }
       },
       required: ['tabId']
@@ -23,9 +23,18 @@ function createTabCloseTool(context) {
         context.incrementMetric('toolCalls');
         context.incrementToolUsageMetrics('tab_close');
 
-        await context.browserContext.closeTab(tabId);
+        // Ensure tabId is a number
+        const numericTabId = typeof tabId === 'string' ? parseInt(tabId, 10) : tabId;
+        if (isNaN(numericTabId)) {
+          return toolError(`Invalid tab ID: ${tabId}`);
+        }
 
-        return toolSuccess(`Closed tab ${tabId}`);
+        const result = await context.browserContext.closeTab(numericTabId);
+        if (result) {
+          return toolSuccess(`Closed tab ${numericTabId}`);
+        } else {
+          return toolError(`Tab ${numericTabId} not found or could not be closed`);
+        }
       } catch (error) {
         context.incrementMetric('errors');
         return toolError(`Failed to close tab: ${error.message}`);

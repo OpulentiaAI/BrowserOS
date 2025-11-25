@@ -27,13 +27,40 @@ function createClickTool(context) {
         context.incrementToolUsageMetrics('click');
 
         const page = await context.browserContext.getCurrentPage();
+        if (!page) {
+          return toolError('No active page to interact with');
+        }
 
-        if (selector) {
+        if (nodeId !== undefined && nodeId !== null) {
+          // Click by nodeId - find interactive element by index or data attribute
+          const script = `
+            (function() {
+              const byData = document.querySelector('[data-nodeid="${nodeId}"]');
+              const interactive = Array.from(document.querySelectorAll('a,button,input,textarea,select,[contenteditable="true"],[role="button"],[role="link"],[role="textbox"]'));
+              const target = byData || interactive[${Number(nodeId)}] || interactive[${Number(nodeId) - 1}];
+              if (target) {
+                target.scrollIntoView({ block: 'center', behavior: 'smooth' });
+                target.focus();
+                target.click();
+                return { success: true, element: target.tagName };
+              }
+              return { success: false, error: 'Element not found with nodeId: ${nodeId}' };
+            })();
+          `;
+          const result = await page.evaluate(script);
+          if (result && result.success) {
+            return toolSuccess(`Successfully clicked element (nodeId: ${nodeId}, tag: ${result.element})`);
+          } else {
+            return toolError(result?.error || 'Failed to click element by nodeId');
+          }
+        } else if (selector) {
           // Use JavaScript to click the element by selector
           const script = `
             (function() {
               const element = document.querySelector('${selector.replace(/'/g, "\\'")}');
               if (element) {
+                element.scrollIntoView({ block: 'center', behavior: 'smooth' });
+                element.focus();
                 element.click();
                 return { success: true };
               }
@@ -47,7 +74,7 @@ function createClickTool(context) {
             return toolError(result?.error || 'Failed to click element');
           }
         } else {
-          return toolError('Selector is required for clicking elements');
+          return toolError('Either selector or nodeId is required for clicking elements');
         }
       } catch (error) {
         context.incrementMetric('errors');

@@ -446,15 +446,21 @@ class BrowserContext {
   }
 
   async focusTab(tabId) {
-    const result = await this._browserAutomation.switchTab(tabId);
+    // Ensure tabId is a number
+    const numericTabId = typeof tabId === 'string' ? parseInt(tabId, 10) : tabId;
+    if (isNaN(numericTabId) || numericTabId === null || numericTabId === undefined) {
+      throw new Error(`Invalid tab ID: ${tabId}`);
+    }
+
+    const result = await this._browserAutomation.switchTab(numericTabId);
     if (!result || result.success === false) {
       throw new Error(result?.error || 'Failed to focus tab');
     }
 
-    let page = this._pageCache.get(tabId);
+    let page = this._pageCache.get(numericTabId);
     if (!page) {
-      page = new ElectronPage(tabId, this._browserAutomation);
-      this._pageCache.set(tabId, page);
+      page = new ElectronPage(numericTabId, this._browserAutomation);
+      this._pageCache.set(numericTabId, page);
     }
     return page;
   }

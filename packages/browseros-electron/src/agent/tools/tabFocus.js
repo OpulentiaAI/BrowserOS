@@ -12,8 +12,8 @@ function createTabFocusTool(context) {
       type: 'object',
       properties: {
         tabId: {
-          type: 'string',
-          description: 'ID of the tab to focus'
+          type: 'number',
+          description: 'ID of the tab to focus (numeric tab ID)'
         }
       },
       required: ['tabId']
@@ -23,7 +23,13 @@ function createTabFocusTool(context) {
         context.incrementMetric('toolCalls');
         context.incrementToolUsageMetrics('tab_focus');
 
-        await context.browserContext.focusTab(tabId);
+        // Ensure tabId is a number
+        const numericTabId = typeof tabId === 'string' ? parseInt(tabId, 10) : tabId;
+        if (isNaN(numericTabId)) {
+          return toolError(`Invalid tab ID: ${tabId}`);
+        }
+
+        await context.browserContext.focusTab(numericTabId);
 
         return toolSuccess(`Switched to tab ${tabId}`);
       } catch (error) {

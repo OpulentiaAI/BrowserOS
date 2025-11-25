@@ -28,9 +28,17 @@ function createExtractTool(context) {
         context.incrementToolUsageMetrics('extract');
 
         const page = await context.browserContext.getCurrentPage();
-        const script = attribute
-          ? `document.querySelector('${selector}')?.getAttribute('${attribute}')`
-          : `document.querySelector('${selector}')?.textContent`;
+        if (!page) {
+          return toolError('No active page to extract from');
+        }
+
+        // Sanitize selector to prevent injection
+        const safeSelector = selector.replace(/'/g, "\\'");
+        const safeAttribute = attribute ? attribute.replace(/'/g, "\\'") : null;
+        
+        const script = safeAttribute
+          ? `document.querySelector('${safeSelector}')?.getAttribute('${safeAttribute}')`
+          : `document.querySelector('${safeSelector}')?.textContent`;
 
         const result = await page.executeScript(script);
 

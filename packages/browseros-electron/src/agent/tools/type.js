@@ -32,6 +32,45 @@ function createTypeTool(context) {
         context.incrementToolUsageMetrics('type');
 
         const page = await context.browserContext.getCurrentPage();
+        if (!page) {
+          return toolError('No active page to interact with');
+        }
+
+        // Handle nodeId-based typing first
+        if (nodeId !== undefined && nodeId !== null) {
+          const safeText = text.replace(/'/g, "\\'");
+          const script = `
+            (function() {
+              const byData = document.querySelector('[data-nodeid="${nodeId}"]');
+              const inputElements = Array.from(document.querySelectorAll('input,textarea,select,[contenteditable="true"],[role="textbox"],[role="searchbox"]'));
+              const target = byData || inputElements[${Number(nodeId)}] || inputElements[${Number(nodeId) - 1}] || document.activeElement;
+              
+              if (!target || target === document.body) {
+                return { success: false, error: 'No input element found with nodeId: ${nodeId}' };
+              }
+              
+              target.focus();
+              if (target.isContentEditable) {
+                target.innerText = '${safeText}';
+              } else if ('value' in target) {
+                target.value = '${safeText}';
+                const nativeInputValueSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value")?.set;
+                if (nativeInputValueSetter) {
+                  nativeInputValueSetter.call(target, '${safeText}');
+                }
+              }
+              target.dispatchEvent(new Event('input', { bubbles: true }));
+              target.dispatchEvent(new Event('change', { bubbles: true }));
+              return { success: true, element: target.tagName };
+            })();
+          `;
+          const result = await page.evaluate(script);
+          if (result && result.success) {
+            return toolSuccess(`Successfully typed "${text}" into element (nodeId: ${nodeId})`);
+          } else {
+            return toolError(result?.error || 'Failed to type into element by nodeId');
+          }
+        }
 
         // Enhanced logic: Try to find element by selector, then by common attributes if selector fails
         const safeText = text.replace(/'/g, "\\'");

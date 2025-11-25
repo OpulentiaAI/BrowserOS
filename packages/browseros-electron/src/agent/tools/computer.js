@@ -108,10 +108,9 @@ function createComputerTool(context) {
           case 'type':
             if (!text) return toolError('text required for type');
             await page.type(text);
-            // Automatically press Enter after typing to ensure submission, as this is the most common intent for "search" tasks
-            // and prevents the agent from getting stuck in a "type -> nothing happens -> retry" loop.
-            await page.pressKey('Enter'); 
-            return toolSuccess(`Typed "${text}" and pressed Enter`);
+            // Note: We do NOT auto-press Enter here - the agent should explicitly press Enter if needed
+            // This gives more control and avoids unintended form submissions
+            return toolSuccess(`Typed "${text}"`);
 
           case 'key':
             if (!key) return toolError('key required for key action');

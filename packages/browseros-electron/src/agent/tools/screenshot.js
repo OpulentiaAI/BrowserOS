@@ -57,7 +57,11 @@ Screenshots help you see what's on the page and make better decisions.`,
         }
 
         const page = await context.browserContext.getCurrentPage();
-        const screenshotResult = await page.takeScreenshot();
+        if (!page) {
+          return toolSuccess('No active page to screenshot. Proceeding without visual capture.');
+        }
+        
+        const screenshotResult = await page.takeScreenshot(selectedSize);
 
         if (!screenshotResult || !screenshotResult.success) {
           return toolSuccess('Screenshot unavailable. Proceeding without visual capture.');

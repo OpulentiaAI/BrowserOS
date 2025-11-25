@@ -92,31 +92,55 @@ class ToolManager {
   toAISDKFormat() {
     const aiTools = {};
     for (const [name, tool] of this.tools) {
-      // Ensure we always provide a valid JSON schema for parameters.
-      // Some tools don't specify parameters, so we default to an empty object schema.
-      const rawParams = tool.parameters && typeof tool.parameters === 'object'
-        ? tool.parameters
-        : { type: 'object', properties: {} };
+      try {
+        // Ensure we always provide a valid JSON schema for parameters.
+        // Some tools don't specify parameters, so we default to an empty object schema.
+        const rawParams = tool.parameters && typeof tool.parameters === 'object'
+          ? tool.parameters
+          : { type: 'object', properties: {} };
 
-      // In AI SDK 6 Beta, tools expect a 'parameters' field which is a Zod schema or a JSON schema.
-      // We provide the JSON schema directly.
-      const wrappedParameters = {
-        type: 'object',
-        properties: {},
-        additionalProperties: false,
-        ...rawParams
-      };
+        // In AI SDK 6 Beta, tools expect a 'parameters' field which is a Zod schema or a JSON schema.
+        // We provide the JSON schema directly.
+        const wrappedParameters = {
+          type: 'object',
+          properties: rawParams.properties || {},
+          additionalProperties: false
+        };
 
-      // Ensure required is an array if provided
-      if (wrappedParameters.required && !Array.isArray(wrappedParameters.required)) {
-        wrappedParameters.required = Object.values(wrappedParameters.required);
+        // Ensure required is an array if provided
+        if (rawParams.required) {
+          wrappedParameters.required = Array.isArray(rawParams.required) 
+            ? rawParams.required 
+            : Object.values(rawParams.required);
+        }
+
+        const schema = jsonSchema(wrappedParameters);
+
+        // AI SDK 6 expects `inputSchema` on the tool object. The older `parameters`
+        // field is still accepted by `tool()`, but the request builder looks for
+        // `inputSchema`, and without it the provider receives a null schema (the
+        // source of the "type: None" error from OpenAI). We set both to keep
+        // compatibility.
+        const aiTool = aiSDKTool({
+          description: tool.description || `Tool: ${name}`,
+          parameters: schema,
+          execute: async (args) => {
+            try {
+              return await tool.execute(args);
+            } catch (error) {
+              console.error(`Tool ${name} execution error:`, error);
+              return { ok: false, output: `Tool error: ${error.message}` };
+            }
+          }
+        });
+
+        // Explicitly expose inputSchema for the request serializer.
+        aiTool.inputSchema = schema;
+
+        aiTools[name] = aiTool;
+      } catch (error) {
+        console.error(`Failed to create AI SDK tool for ${name}:`, error);
       }
-
-      aiTools[name] = aiSDKTool({
-        description: tool.description,
-        parameters: jsonSchema(wrappedParameters),
-        execute: tool.execute
-      });
     }
     return aiTools;
   }

@@ -18,12 +18,16 @@ function createTabsTool(context) {
         context.incrementToolUsageMetrics('tabs');
 
         const tabs = await context.browserContext.getTabs();
+        
+        if (!tabs || !Array.isArray(tabs)) {
+          return toolSuccess(JSON.stringify([]));
+        }
 
         const tabList = tabs.map((tab) => ({
           id: tab.id,
           title: tab.title || 'Untitled',
           url: tab.url || '',
-          active: tab.active || false
+          active: tab.active || tab.isActive || false
         }));
 
         return toolSuccess(JSON.stringify(tabList));

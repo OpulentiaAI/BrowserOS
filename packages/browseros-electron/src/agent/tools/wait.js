@@ -24,13 +24,16 @@ function createWaitTool(context) {
         context.incrementToolUsageMetrics('wait');
 
         const page = await context.browserContext.getCurrentPage();
-        await page.waitForStability();
-
-        if (seconds > 0) {
-          await new Promise((resolve) => setTimeout(resolve, seconds * 1000));
+        if (page) {
+          await page.waitForStability();
         }
 
-        return toolSuccess(`Waited ${seconds} seconds for stability`);
+        const waitSeconds = Math.max(0, Math.min(seconds || 2, 30)); // Limit to 30 seconds
+        if (waitSeconds > 0) {
+          await new Promise((resolve) => setTimeout(resolve, waitSeconds * 1000));
+        }
+
+        return toolSuccess(`Waited ${waitSeconds} seconds for stability`);
       } catch (error) {
         context.incrementMetric('errors');
         return toolError(`Wait failed: ${error.message}`);

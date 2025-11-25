@@ -23,10 +23,24 @@ function createNavigateTool(context) {
         context.incrementMetric('toolCalls');
         context.incrementToolUsageMetrics('navigate');
 
-        const page = await context.browserContext.getCurrentPage();
-        await page.navigate(url);
+        if (!url || typeof url !== 'string') {
+          return toolError('URL is required for navigation');
+        }
 
-        return toolSuccess(`Successfully navigated to ${url}`);
+        const page = await context.browserContext.getCurrentPage();
+        if (!page) {
+          return toolError('No active page to navigate');
+        }
+
+        // Ensure URL has a protocol
+        let targetUrl = url.trim();
+        if (!targetUrl.startsWith('http://') && !targetUrl.startsWith('https://')) {
+          targetUrl = 'https://' + targetUrl;
+        }
+
+        await page.navigate(targetUrl);
+
+        return toolSuccess(`Successfully navigated to ${targetUrl}`);
       } catch (error) {
         context.incrementMetric('errors');
         return toolError(`Navigation failed: ${error.message}`);

@@ -33,8 +33,11 @@ function createScrollTool(context) {
         context.incrementToolUsageMetrics('scroll');
 
         const page = await context.browserContext.getCurrentPage();
+        if (!page) {
+          return toolError('No active page to interact with');
+        }
 
-        if (nodeId) {
+        if (nodeId !== undefined && nodeId !== null) {
           const scrolled = await page.scrollToElement(nodeId);
           return toolSuccess(`Scrolled to element ${nodeId} ${scrolled ? 'success' : 'already visible'}`);
         } else if (direction) {

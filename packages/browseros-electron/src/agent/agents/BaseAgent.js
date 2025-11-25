@@ -70,6 +70,15 @@ class BaseAgent {
     const toolManager = this.getToolManager();
     const aiTools = toolManager.toAISDKFormat();
 
+    // Debug: log navigate tool schema to catch malformed tool payloads
+    try {
+      const navTool = aiTools.navigate;
+      const navSchema = navTool?.inputSchema?.jsonSchema || navTool?.parameters?.jsonSchema || navTool?.parameters;
+      Logging.log(this.loggerSource, `Navigate tool schema: ${JSON.stringify(navSchema)}`, 'info');
+    } catch (e) {
+      Logging.log(this.loggerSource, `Navigate schema debug failed: ${e.message}`, 'warning');
+    }
+
     // Use AI Gateway if available, fallback to OpenAI or OpenRouter
     let model;
     if (process.env.AI_GATEWAY_API_KEY) {
@@ -100,6 +109,7 @@ class BaseAgent {
         messages,
         tools: aiTools,
         maxSteps,
+        toolChoice: 'auto',
         providerOptions: {
           openai: {
             reasoning: {
