@@ -219,10 +219,44 @@ class ElectronPage {
     const safeKey = JSON.stringify(key);
     const script = `(() => {
       const target = document.activeElement || document.body;
-      const opts = { key: ${safeKey}, code: ${safeKey}, keyIdentifier: ${safeKey}, bubbles: true };
+      const opts = { key: ${safeKey}, code: ${safeKey}, keyIdentifier: ${safeKey}, bubbles: true, cancelable: true };
+      
+      // Dispatch keyboard events
       target.dispatchEvent(new KeyboardEvent('keydown', opts));
       target.dispatchEvent(new KeyboardEvent('keypress', opts));
       target.dispatchEvent(new KeyboardEvent('keyup', opts));
+      
+      // For Enter key, also try to submit the form or trigger native behavior
+      if (${safeKey} === 'Enter') {
+        // Try form submission
+        const form = target.closest('form');
+        if (form) {
+          // Check if there's a submit button, click it
+          const submitBtn = form.querySelector('button[type="submit"], input[type="submit"], button:not([type])');
+          if (submitBtn) {
+            submitBtn.click();
+            return { submitted: 'button' };
+          }
+          // Otherwise submit the form directly
+          form.submit();
+          return { submitted: 'form' };
+        }
+        // For contenteditable or when no form, try simulating enter press more aggressively
+        if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA') {
+          // Create and dispatch a proper submit event
+          const submitEvent = new Event('submit', { bubbles: true, cancelable: true });
+          const form2 = target.form;
+          if (form2) {
+            form2.dispatchEvent(submitEvent);
+            if (!submitEvent.defaultPrevented) {
+              form2.submit();
+            }
+            return { submitted: 'form-event' };
+          }
+        }
+      }
+      
+      // For single character keys, append to value
       if (target && target.value !== undefined && ${safeKey}.length === 1) {
         try {
           target.value += ${safeKey};
@@ -230,7 +264,7 @@ class ElectronPage {
           target.dispatchEvent(new Event('change', { bubbles: true }));
         } catch (e) {}
       }
-      return true;
+      return { submitted: false };
     })();`;
     return await this.evaluate(script);
   }
@@ -281,34 +315,44 @@ class ElectronPage {
   }
 
   async type(text) {
+    if (!text) return { success: false, error: 'No text provided' };
+    
+    // Use robust typing with keyDown, char, and keyUp events
+    // This ensures compatibility with React, Vue, and other frameworks
     for (const char of text) {
+      // Send keyDown event
+      await this.sendInputEvent({ 
+        type: 'keyDown', 
+        keyCode: char,
+        key: char,
+        code: `Key${char.toUpperCase()}`
+      });
+      // Send char event (for text input)
       await this.sendInputEvent({
         type: 'char',
         keyCode: char
       });
+      // Send keyUp event
+      await this.sendInputEvent({ 
+        type: 'keyUp', 
+        keyCode: char,
+        key: char,
+        code: `Key${char.toUpperCase()}`
+      });
+      // Small delay between characters for stability
+      await new Promise(r => setTimeout(r, 10));
     }
-    // Explicitly send Enter after typing to ensure submission
-    // This is a heuristic: if the user types something, they often want to submit it.
-    // However, 'computer' tool might want separate control.
-    // Let's keep it simple: The tool should request 'key' action for Enter if needed.
-    // BUT, the current issue is "spamming the same action".
-    // If the model types "latest AI news" and nothing happens, it retries.
-    // It likely EXPECTS typing to search.
-    // Let's add an implicit Enter if the text looks like a query? 
-    // No, better to enforce it in the tool or agent logic.
-    // The Agent guidelines already say "Press Enter".
-    // Let's ensure the 'char' event is actually sufficient.
-    // Electron's sendInputEvent 'char' might not trigger 'keydown'/'keyup'.
-    // We should probably send keydown/keyup for each char too.
     
-    // Enhanced typing with keydown/keyup simulation
-    /* 
-    for (const char of text) {
-      await this.sendInputEvent({ type: 'keyDown', keyCode: char });
-      await this.sendInputEvent({ type: 'char', keyCode: char });
-      await this.sendInputEvent({ type: 'keyUp', keyCode: char });
-    }
-    */
+    // Also dispatch input event via script for React compatibility
+    await this.evaluate(`
+      (function() {
+        const el = document.activeElement;
+        if (el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.isContentEditable)) {
+          el.dispatchEvent(new Event('input', { bubbles: true }));
+        }
+      })();
+    `);
+    
     return { success: true };
   }
 }

@@ -64,16 +64,45 @@ function createComputerTool(context) {
           case 'left_click':
             if (coordinate) {
               await page.mouseMove(coordinate[0], coordinate[1]);
+              await page.click(coordinate[0], coordinate[1], 'left');
+              return toolSuccess(`Left clicked at ${coordinate[0]}, ${coordinate[1]}`);
             }
-            // Click at current position (or new position if moved)
-            // We need to know current position if coordinate not provided?
-            // Electron sendInputEvent requires x,y.
-            // If coordinate missing, we might fail or need to track state.
-            // For now, require coordinate for clicks to be safe, or assume 0,0 if missing (bad).
-            // Better: Planner should provide coordinates.
-            if (!coordinate) return toolError('coordinate required for left_click (state tracking not fully implemented)');
-            await page.click(coordinate[0], coordinate[1], 'left');
-            return toolSuccess(`Left clicked at ${coordinate[0]}, ${coordinate[1]}`);
+            // No coordinates provided - try to find and focus a clickable input
+            // This is useful for search boxes where we don't know exact position
+            const clickResult = await page.evaluate(`
+              (function() {
+                // Try common search input selectors
+                const selectors = [
+                  'input[name="q"]',           // Google search
+                  'input[type="search"]',      // Generic search input
+                  'input[aria-label*="search" i]',
+                  'input[placeholder*="search" i]',
+                  'textarea[name="q"]',        // Google search textarea
+                  '[contenteditable="true"]',
+                  'input:not([type="hidden"]):not([type="submit"]):not([type="button"])'
+                ];
+                for (const sel of selectors) {
+                  const el = document.querySelector(sel);
+                  if (el && el.offsetParent !== null) {
+                    el.focus();
+                    el.click();
+                    const rect = el.getBoundingClientRect();
+                    return { 
+                      success: true, 
+                      element: el.tagName,
+                      selector: sel,
+                      x: Math.round(rect.x + rect.width/2),
+                      y: Math.round(rect.y + rect.height/2)
+                    };
+                  }
+                }
+                return { success: false, error: 'No clickable input found' };
+              })();
+            `);
+            if (clickResult && clickResult.success) {
+              return toolSuccess(`Clicked and focused ${clickResult.element} (${clickResult.selector}) at ${clickResult.x}, ${clickResult.y}`);
+            }
+            return toolError(clickResult?.error || 'coordinate required for left_click and no input found to auto-focus');
 
           case 'right_click':
             if (!coordinate) return toolError('coordinate required for right_click');

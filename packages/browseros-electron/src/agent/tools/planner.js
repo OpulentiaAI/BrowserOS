@@ -10,9 +10,13 @@ const { MessageManagerReadOnly, MessageType } = require('../MessageManager');
 const { generatePlannerSystemPrompt, generatePlannerTaskPrompt, PLANNING_CONFIG } = require('./plannerPrompts');
 const { PubSub } = require('../PubSub');
 
-// We depend on AI SDK with AI Gateway for unified model access
+// We depend on AI SDK for model access
 const { generateObject } = require('ai');
 const { openai } = require('@ai-sdk/openai');
+const { createOpenRouter } = require('@openrouter/ai-sdk-provider');
+
+// OpenRouter model - Claude Sonnet 4.5
+const OPENROUTER_MODEL = 'anthropic/claude-sonnet-4.5';
 
 // Zod schema for the planner output
 const { z } = require('zod');
@@ -24,30 +28,32 @@ const PLAN_SCHEMA = z.object({
   }))
 });
 
-// Helper function to get available model with AI Gateway
+// Helper function to get available model
 function getAvailableModel() {
-  // Use AI Gateway if available
-  if (process.env.AI_GATEWAY_API_KEY) {
+  // Use OpenRouter with official SDK
+  if (process.env.OPENROUTER_API_KEY) {
     try {
-      return openai('gpt-4o', {
-        apiKey: process.env.AI_GATEWAY_API_KEY,
-        baseURL: 'https://api.voidctrl.com/v1'
+      console.log('Planner using', OPENROUTER_MODEL, 'via OpenRouter (official SDK)');
+      const openrouter = createOpenRouter({
+        apiKey: process.env.OPENROUTER_API_KEY
       });
+      return openrouter.chat(OPENROUTER_MODEL);
     } catch (error) {
-      console.warn('AI Gateway model failed:', error.message);
+      console.warn('OpenRouter failed:', error.message);
     }
   }
 
-  // Fallback to direct OpenAI
+  // Fallback to OpenAI
   if (process.env.OPENAI_API_KEY) {
     try {
+      console.log('Planner falling back to GPT-4o');
       return openai('gpt-4o');
     } catch (error) {
       console.warn('OpenAI model failed:', error.message);
     }
   }
 
-  throw new Error('No available AI model providers configured. Please set AI_GATEWAY_API_KEY or OPENAI_API_KEY');
+  throw new Error('No available AI model providers configured. Please set OPENROUTER_API_KEY or OPENAI_API_KEY');
 }
 
 function createPlannerTool(context) {
@@ -116,13 +122,22 @@ function createPlannerTool(context) {
         const model = getAvailableModel();
 
         console.log('Planner calling generateObject...');
-        const { object: plan } = await generateObject({
-          model,
-          system: systemPrompt,
-          prompt: taskPrompt,
-          schema: PLAN_SCHEMA
-        });
-        console.log('Planner generateObject returned:', JSON.stringify(plan, null, 2));
+        let plan;
+        try {
+          const result = await generateObject({
+            model,
+            system: systemPrompt,
+            prompt: taskPrompt,
+            schema: PLAN_SCHEMA,
+            maxTokens: 20480 // 10x token limit for planning
+          });
+          plan = result.object;
+          console.log('Planner generateObject returned:', JSON.stringify(plan, null, 2));
+        } catch (genError) {
+          console.error('Planner generateObject error:', genError.message);
+          console.error('Full error:', genError);
+          throw genError;
+        }
 
         if (!plan || !Array.isArray(plan.steps)) {
           throw new Error('Planner did not return a valid plan');

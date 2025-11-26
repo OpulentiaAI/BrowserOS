@@ -7,7 +7,11 @@ const { toolSuccess } = require('../ToolInterface');
 function createDoneTool(context) {
   return {
     name: 'done',
-    description: 'Mark the task as complete',
+    description: `Mark the task as complete and provide a final summary to the user.
+CRITICAL: The message MUST contain actual information discovered during the task, not just a description of what you did.
+For search/research tasks: Include the actual headlines, facts, or data you found.
+BAD message: "I searched for AI news"
+GOOD message: "Here are the latest AI news: 1) OpenAI released GPT-5 with... 2) Google announced..."`,
     parameters: {
       type: 'object',
       properties: {
@@ -17,14 +21,21 @@ function createDoneTool(context) {
         },
         message: {
           type: 'string',
-          description: 'Completion message or reason for failure'
+          description: 'REQUIRED: A detailed summary containing the actual information discovered. For research tasks, include specific headlines, facts, dates, and sources found.'
         }
       },
-      required: ['success']
+      required: ['success', 'message']
     },
     execute: async ({ success, message }) => {
       context.incrementMetric('toolCalls');
       context.incrementToolUsageMetrics('done');
+
+      // Log if message is missing - helps debug
+      if (!message) {
+        console.warn('[Done Tool] WARNING: Called without message! This should include the actual findings.');
+      } else {
+        console.log('[Done Tool] Message received:', message.substring(0, 200));
+      }
 
       const output = {
         success,

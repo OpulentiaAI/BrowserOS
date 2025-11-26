@@ -3,8 +3,19 @@ const { createAllTools } = require('../tools/index');
 const { PubSub } = require('../PubSub');
 const { Logging } = require('../utils/Logging');
 const { GLOW_ENABLED_TOOLS } = require('../services/GlowAnimationService');
-const { streamText } = require('ai');
+const { generateText, streamText, stepCountIs } = require('ai');
 const { openai } = require('@ai-sdk/openai');
+const { createOpenRouter } = require('@openrouter/ai-sdk-provider');
+
+// OpenRouter model - Claude Sonnet 4.5
+const OPENROUTER_MODEL = 'anthropic/claude-sonnet-4.5';
+
+// Custom stop condition: stop when 'done' tool is called
+const hasToolCall = (toolName) => ({ steps }) => {
+  return steps.some(step => 
+    step.toolCalls?.some(tc => tc.toolName === toolName)
+  );
+};
 
 class BaseAgent {
   constructor(executionContext, options = {}) {
@@ -79,28 +90,44 @@ class BaseAgent {
       Logging.log(this.loggerSource, `Navigate schema debug failed: ${e.message}`, 'warning');
     }
 
-    // Use AI Gateway if available, fallback to OpenAI or OpenRouter
+    // Use OpenRouter with official SDK
     let model;
-    if (process.env.AI_GATEWAY_API_KEY) {
-      model = openai('gpt-4o', {
-        apiKey: process.env.AI_GATEWAY_API_KEY,
-        baseURL: 'https://api.voidctrl.com/v1'
+    if (process.env.OPENROUTER_API_KEY) {
+      console.log('Executor: Using OpenRouter official SDK');
+      console.log('Executor: Model:', OPENROUTER_MODEL);
+      const openrouter = createOpenRouter({
+        apiKey: process.env.OPENROUTER_API_KEY
       });
-    } else if (process.env.OPENROUTER_API_KEY) {
-      model = openai('google/gemini-3-pro-preview', {
-        apiKey: process.env.OPENROUTER_API_KEY,
-        baseURL: 'https://openrouter.ai/api/v1'
-      });
+      model = openrouter.chat(OPENROUTER_MODEL);
+      Logging.log(this.loggerSource, `Using ${OPENROUTER_MODEL} via OpenRouter`, 'info');
     } else if (process.env.OPENAI_API_KEY) {
       model = openai('gpt-4o');
+      Logging.log(this.loggerSource, `Using GPT-4o via OpenAI`, 'info');
     } else {
-      throw new Error('No AI model provider configured. Set AI_GATEWAY_API_KEY, OPENROUTER_API_KEY, or OPENAI_API_KEY');
+      throw new Error('No AI model provider configured. Set OPENROUTER_API_KEY or OPENAI_API_KEY');
     }
 
     const context = this.executionContext;
-    const messages = context.messageManager.getMessages();
+    
+    // Build messages from the original task only - let AI SDK handle tool call history internally
+    // We just provide the initial user request to avoid v5/v6 format issues
+    const messages = [];
+    const rawMessages = context.messageManager.getMessages();
+    
+    // Only include the first human message (the task) and any simple AI responses
+    for (const msg of rawMessages) {
+      if (msg.role === 'human' && typeof msg.content === 'string') {
+        messages.push({ role: 'user', content: msg.content });
+        break; // Only include the original task
+      }
+    }
+    
+    // If no user message found, use a default
+    if (messages.length === 0) {
+      messages.push({ role: 'user', content: 'Execute the task as planned.' });
+    }
 
-    Logging.log(this.loggerSource, `Starting executor run (maxSteps=${maxSteps})`, 'info');
+    Logging.log(this.loggerSource, `Starting executor run (maxSteps=${maxSteps}, messages=${messages.length})`, 'info');
 
     try {
       const result = streamText({
@@ -109,13 +136,44 @@ class BaseAgent {
         messages,
         tools: aiTools,
         maxSteps,
+        maxTokens: 40960, // 10x token limit
         toolChoice: 'auto',
-        providerOptions: {
-          openai: {
-            reasoning: {
-              effort: 'low'
+        // Stop when 'done' tool is called OR max steps reached
+        stopWhen: [
+          hasToolCall('done'),
+          stepCountIs(maxSteps)
+        ],
+        // Update context between steps - manage growing history
+        prepareStep: async ({ stepNumber, steps, messages }) => {
+          // Log step progress
+          console.log(`Executor: Step ${stepNumber}, previous steps: ${steps.length}`);
+          
+          // Publish progress to chat
+          if (stepNumber > 0) {
+            const lastStep = steps[steps.length - 1];
+            if (lastStep?.toolCalls?.length > 0) {
+              const toolNames = lastStep.toolCalls.map(tc => tc.toolName).join(', ');
+              this.publishAssistant(`Step ${stepNumber}: Completed ${toolNames}`);
             }
           }
+          
+          // Context management: trim messages if they get too long to avoid 413 errors
+          // Keep system message + user message + last 6 messages (3 exchanges)
+          if (messages && messages.length > 10) {
+            console.log(`Executor: Trimming messages from ${messages.length} to prevent context overflow`);
+            const systemMsg = messages.find(m => m.role === 'system');
+            const userMsg = messages.find(m => m.role === 'user');
+            const recentMsgs = messages.slice(-6);
+            
+            const trimmedMessages = [];
+            if (systemMsg) trimmedMessages.push(systemMsg);
+            if (userMsg && !recentMsgs.includes(userMsg)) trimmedMessages.push(userMsg);
+            trimmedMessages.push(...recentMsgs);
+            
+            return { messages: trimmedMessages };
+          }
+          
+          return {}; // Continue with same settings
         },
         onChunk: ({ chunk }) => {
           if (chunk.type === 'text-delta') {
@@ -140,7 +198,11 @@ class BaseAgent {
                 args: tc.args
               }))
             });
-            this.publishThinking(`Executing ${toolCalls.length} tool(s): ${toolCalls.map(t => t.toolName).join(', ')}...`);
+            // Publish user-friendly tool execution messages
+            for (const tc of toolCalls) {
+              const argsPreview = JSON.stringify(tc.args || {}).substring(0, 100);
+              this.publishAssistant(`🔧 ${tc.toolName}: ${argsPreview}`);
+            }
           }
           if (toolResults && toolResults.length > 0) {
             this.emitEvent({
@@ -148,25 +210,53 @@ class BaseAgent {
               results: toolResults.map((tr) => ({
                 name: tr.toolName,
                 result: tr.result,
-                args: tr.args // Include args for context/history
+                args: tr.args
               }))
             });
+            // Publish results summary
+            for (const tr of toolResults) {
+              const resultPreview = typeof tr.result === 'string' 
+                ? tr.result.substring(0, 150) 
+                : JSON.stringify(tr.result || {}).substring(0, 150);
+              this.publishAssistant(`✓ ${tr.toolName} completed: ${resultPreview}`);
+            }
           }
         }
       });
 
       // Wait for the full execution to complete
-      const fullText = await result.text;
-      const toolResults = await result.toolResults;
+      console.log('Executor: waiting for result.text...');
+      let fullText, toolResults, toolCalls;
+      try {
+        fullText = await result.text;
+        console.log('Executor: fullText =', fullText?.substring(0, 200) || '(empty)');
+      } catch (textError) {
+        console.error('Executor: Error getting text:', textError.message);
+        fullText = '';
+      }
+      
+      try {
+        toolResults = await result.toolResults;
+        console.log('Executor: toolResults count =', toolResults?.length || 0);
+      } catch (trError) {
+        console.error('Executor: Error getting toolResults:', trError.message);
+        toolResults = [];
+      }
+      
+      try {
+        toolCalls = await result.toolCalls;
+        console.log('Executor: toolCalls count =', toolCalls?.length || 0);
+      } catch (tcError) {
+        console.error('Executor: Error getting toolCalls:', tcError.message);
+        toolCalls = [];
+      }
+      
       const usage = await result.usage;
       
-      // Update message history with the new interaction steps
-      const response = await result.response;
-      const newMessages = response.messages;
-      
-      // Add all new messages (assistant and tool) to history directly to preserve structure (e.g. tool_calls)
-      for (const msg of newMessages) {
-        context.messageManager.add(msg);
+      // Note: Don't add raw AI SDK response messages to history - format incompatibility between v5/v6
+      // Instead, just add a summary message if there's text output
+      if (fullText && fullText.trim()) {
+        context.messageManager.addAI(fullText);
       }
       
       Logging.log(this.loggerSource, 'Executor run completed', 'info');
@@ -175,7 +265,7 @@ class BaseAgent {
         fullText,
         toolResults,
         usage,
-        toolCalls: await result.toolCalls
+        toolCalls
       };
 
     } catch (error) {

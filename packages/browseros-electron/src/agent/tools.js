@@ -190,11 +190,23 @@ Always call the 'done' tool when you've completed the user's request.`;
     // Convert tools to AI SDK format
     const aiTools = {};
     for (const [name, tool] of Object.entries(tools)) {
-      aiTools[name] = {
-        description: tool.description,
-        parameters: tool.parameters,
-        execute: async (args) => {
-          const result = await tool.execute(args, { browserAutomation });
+    const params = tool.parameters && typeof tool.parameters === 'object'
+      ? tool.parameters
+      : { type: 'object', properties: {} };
+    const schema = jsonSchema({
+      type: 'object',
+      properties: {},
+      additionalProperties: false,
+      ...params
+    });
+
+    aiTools[name] = {
+      description: tool.description,
+      // Provide both fields; SDK serializes using inputSchema.
+      parameters: schema,
+      inputSchema: schema,
+      execute: async (args) => {
+        const result = await tool.execute(args, { browserAutomation });
           
           // Check if done
           if (result && result.done) {

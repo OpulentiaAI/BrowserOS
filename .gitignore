@@ -9,3 +9,4 @@ nxtscape-cli-access.json
 gclient.json
 .env
 opulent-browser-ref/
+**/node_modules/

@@ -1,102 +1,79 @@
 const { BaseAgent } = require('./BaseAgent');
 const { toolError } = require('../ToolInterface');
 
-const EXECUTOR_SYSTEM_PROMPT_TEMPLATE = `You are BrowserOS, an advanced AI browser automation agent.
-Knowledge cutoff: 2024-06
-Current date: {CURRENT_DATE}
+const EXECUTOR_SYSTEM_PROMPT_TEMPLATE = `You are an intelligent browser automation agent. Date: {CURRENT_DATE}
 
-You are running within BrowserOS, a standalone browser application. Your purpose is to interpret page content, execute browser actions, and help the user accomplish tasks efficiently.
+# Task
+{TASK}
 
-# Tools
+# Current Browser State
+{BROWSER_STATE}
 
-## navigation & interaction
-
-The agent has access to a comprehensive suite of tools to interact with the browser.
-
-- **navigate**: Open a URL. Use this when the user asks to go to a specific site or when the current page is irrelevant.
-- **type**: Type text into an input field. You can target elements by label, placeholder, or CSS selector.
-- **click**: Click on an element. You can target by text content, aria-label, or selector.
-- **clickAtCoordinates**: Click at a specific X,Y location. Useful for canvas/map interactions or when standard click fails.
-- **scroll**: Scroll the page up/down/to element.
-- **wait**: Pause execution. Use sparingly, mostly when anticipating a network reload that isn't auto-detected.
-- **key**: Press a specific key (e.g., Enter, Escape, Tab).
-
-## tab management
-
-- **tab_open**: Open a new tab.
-- **tab_close**: Close a tab.
-- **tab_focus**: Switch to a specific tab.
-- **list_tabs**: See all open tabs. Always call this before managing tabs to know the current state.
-- **group_tabs**: Organize tabs into groups.
-- **get_selected_tabs**: Get the currently selected tabs.
-
-## memory & tasks
-
-- **todo_set**: Update the todo list. Use this to track progress on multi-step tasks.
-- **todo_get**: Read the current todo list.
-
-## system
-
-- **done**: Call this when the task is fully complete. Provide a summary of what was done.
-- **human_input**: Call this if you are genuinely stuck, need credentials you don't have, or need the user to solve a captcha/MFA.
-- **screenshot**: Take a screenshot of the current view.
-- **extract**: Extract specific content from the page.
-
-# Developer Identity and Environment Instructions
-
-<browser_identity>
-You are running within BrowserOS. You can chat with the user and reference live web context from the active tab.
-
-# Modes
-Full-Page Chat — BrowserOS occupies the full window.
-Web Browsing — The user navigates the web normally; BrowserOS can interpret the full active page context.
-
-# Instruction priority
-1. System and developer instructions
-2. Tool specifications
-3. User request
-4. Visual/Page context
-
-# Using Tools (General Guidance)
-- **Computer Tool**: PREFER the 'computer' tool for all mouse and keyboard interactions. It is more reliable than 'click' or 'type'.
-  - Use 'action="mouse_move"' to hover.
-  - Use 'action="left_click"' to click.
-  - Use 'action="type"' to type text.
-  - Use 'action="key"' to press keys (e.g., "Enter").
-- **Navigation**: Do NOT navigate if you are already on the correct page. Check the current URL first.
-- **Search**: To search, first navigate to a search engine (e.g., google.com), then use 'computer' tool to click the search bar and type the query, then press Enter.
-- **Confirmation**: When a task is done, use the 'done' tool. Do not just say "I'm done" in text.
-
-## Reasoning
-You MUST emit a thought trace BEFORE calling any tool. This reasoning should explain WHY you are taking the next step and WHAT you expect to happen.
-Since you cannot use a dedicated reasoning channel, you should include your reasoning in your text response before the tool call, or as a separate message if possible.
-HOWEVER, for this specific runtime, you are configured to use 'low' reasoning effort which might be suppressing output.
-To compensate, ALWAYS include a "thinking" step in your internal logic before acting.
-
-## Blocked or Missing Content
-If a page is inaccessible (403/404), report it and ask for next steps.
-If a captcha appears, use 'human_input' to ask the user to solve it.
-
-</browser_identity>
-
-Task: {TASK}
-
-Planned actions:
+# Plan
 {ACTION_LIST}
 
+# Available Tools
 {TOOL_DESCRIPTIONS}
 
-Guidelines:
-- You MUST use the available tools to execute the planned actions.
-- PREFER the 'computer' tool for interaction.
-- Follow the plan step-by-step.
-- Execute ONE major action per step. Do not chain multiple tool calls unless they are tightly coupled (e.g. click then type).
-- **Reasoning**: Before every tool call, you MUST briefly explain your intent.
-- If the plan asks to 'Search', you must first Navigate to the search engine (if not already there), then use 'computer' to Type and Click or Press Enter.
-- Do NOT simply navigate to the same page repeatedly.
-- If you are already on the correct page, proceed to the next logical step (e.g., typing).
-- Keep the user updated by calling the done tool when finished.
-- Ask for human_input if blocked.`;
+# CRITICAL INSTRUCTIONS
+
+You are an intelligent research assistant. Your job is to:
+1. Navigate and interact with web pages
+2. EXTRACT and READ the actual content found
+3. SUMMARIZE the discoveries in a helpful natural language response
+
+## MANDATORY Execution Flow for Research/Search Tasks:
+
+### Step 1: Search
+Call \`search\` tool with the query to find information.
+
+### Step 2: Wait
+Call \`wait\` tool for 1-2 seconds to let results load.
+
+### Step 3: Extract Content
+Call \`extract\` tool with selector="body" and maxLength=5000.
+READ THE OUTPUT CAREFULLY - it contains the actual information!
+
+### Step 4: Explore If Needed
+- Use \`scroll\` tool with direction="down" to see more content
+- Use \`click\` tool to open interesting articles for more details
+- Extract again after scrolling or clicking to get new content
+
+### Step 5: Summarize and Complete
+Call \`done\` tool with a message that INCLUDES THE ACTUAL INFORMATION you extracted.
+
+## CRITICAL: How to Call the Done Tool
+
+After calling \`extract\`, you will receive page content with headlines and information.
+YOU MUST put the actual findings IN THE DONE TOOL'S MESSAGE PARAMETER!
+
+**IMPORTANT: Do NOT output text before calling done. Put ALL your findings in the done message parameter!**
+
+When calling done, use this format:
+\`\`\`
+done({ success: true, message: "Here are the latest AI news stories I found: 1) Google's Gemini Update - Google is having AI build the UI (Bloomberg, 1 day ago)..." })
+\`\`\`
+
+**BAD (do not do this):**
+- Outputting text like "Perfect, I found the news..." and then calling done({success: true})
+- Calling done without a message parameter
+- Calling done with message: "Task completed"
+
+**GOOD (required):**
+- done({ success: true, message: "Here are the latest AI news stories I found:\n1) Google's Gemini Update - Google is having AI build the UI (Bloomberg, 1 day ago)\n2) Harmonic AI Startup - Robinhood CEO's AI startup valued at $1.45B (Yahoo Finance, 4 hours ago)\n3) Claude beats Gemini 3 - New developments in AI competition\n\nKey trends: AI is being integrated into more products, valuations are rising." })
+
+## Exploration Guidelines
+- If initial results aren't enough, SCROLL DOWN to see more
+- CLICK on promising article links to get more detailed information
+- After clicking an article, EXTRACT its content and include key points
+- You have up to {MAX_STEPS} steps - use them to gather comprehensive information
+
+## Rules
+- Do NOT stop after just searching - always EXTRACT and SUMMARIZE
+- The user wants INFORMATION, not confirmation that you searched
+- Your done message IS your response to the user - make it informative!
+
+Begin execution now.`;
 
 class ElectronBrowserAgent extends BaseAgent {
   constructor(executionContext, options = {}) {
@@ -111,7 +88,7 @@ class ElectronBrowserAgent extends BaseAgent {
     
     super(executionContext, { ...options, onEvent: wrappedOnEvent });
     this.iterations = 0;
-    this.maxIterations = options.maxIterations || 10;
+    this.maxIterations = options.maxIterations || 15; // Increased for more detailed plans
     this.maxRetries = options.maxRetries || 3;
   }
 
@@ -195,29 +172,129 @@ class ElectronBrowserAgent extends BaseAgent {
         const toolDescriptions = this.getToolManager().getDescriptions();
         const currentDate = new Date().toISOString().split('T')[0];
         
-        // If we have a plan, use it in the prompt. Otherwise generic prompt.
-        // Note: If TaskManager has steps, we could use that state?
-        // But the prompt template expects {ACTION_LIST}.
+        // Get current browser state for context
+        let browserState = 'Unknown';
+        try {
+          const page = await context.browserContext.getCurrentPage();
+          if (page) {
+            const url = page.url || 'unknown';
+            const title = page.title || 'unknown';
+            const content = await page.evaluate('document.body ? document.body.innerText.substring(0, 500) : ""');
+            browserState = `URL: ${url}\nTitle: ${title}\nPage content preview: ${content}...`;
+          }
+        } catch (e) {
+          browserState = 'Could not get browser state';
+        }
         
         const systemPrompt = EXECUTOR_SYSTEM_PROMPT_TEMPLATE
               .replace('{CURRENT_DATE}', currentDate)
               .replace('{TASK}', task)
+              .replace('{BROWSER_STATE}', browserState)
               .replace('{ACTION_LIST}', currentPlan ? currentPlan.proposedActions.join('\n') : 'Proceed with task')
-              .replace('{TOOL_DESCRIPTIONS}', toolDescriptions);
+              .replace('{TOOL_DESCRIPTIONS}', toolDescriptions)
+              .replace('{MAX_STEPS}', String(this.maxIterations));
 
-        const executorResult = await this.runExecutor({
+        this.publishAssistant(`🔍 Starting task: ${task}`);
+        
+        let executorResult = await this.runExecutor({
             systemPrompt,
-            maxSteps: this.maxIterations // Use agent's maxIterations as maxSteps
+            maxSteps: this.maxIterations
         });
 
-        // Check if done
-        if (executorResult.fullText) {
-             return { success: true, text: executorResult.fullText };
+        // Check if done tool was called
+        const doneToolCalled = executorResult.toolCalls?.some(tc => tc.toolName === 'done');
+        
+        // Find the done tool result and extract the message
+        let doneMessage = null;
+        if (doneToolCalled) {
+          // First try to get the message from the tool call args (what the AI actually sent)
+          const doneCall = executorResult.toolCalls?.find(tc => tc.toolName === 'done');
+          if (doneCall?.args?.message) {
+            doneMessage = doneCall.args.message;
+          }
+          
+          // Also check the result in case the message is there
+          if (!doneMessage) {
+            const doneResult = executorResult.toolResults?.find(tr => tr.toolName === 'done');
+            if (doneResult?.result) {
+              try {
+                const parsed = typeof doneResult.result === 'string' 
+                  ? JSON.parse(doneResult.result) 
+                  : doneResult.result;
+                // Check nested output structure from toolSuccess
+                if (parsed.output) {
+                  const innerParsed = typeof parsed.output === 'string' ? JSON.parse(parsed.output) : parsed.output;
+                  doneMessage = innerParsed.message || innerParsed.output;
+                } else {
+                  doneMessage = parsed.message || parsed.output;
+                }
+              } catch (e) {
+                console.log('Done result parse error:', e.message);
+              }
+            }
+          }
+          
+          // Try to find extracted content from tool results FIRST
+          // This is more likely to contain the actual search results
+          let extractedContent = null;
+          const extractResults = executorResult.toolResults?.filter(tr => tr.toolName === 'extract') || [];
+          for (const extractResult of extractResults) {
+            if (extractResult?.result) {
+              try {
+                const parsed = typeof extractResult.result === 'string' 
+                  ? JSON.parse(extractResult.result) 
+                  : extractResult.result;
+                const content = parsed.output || parsed.result || '';
+                if (content.length > extractedContent?.length || 0) {
+                  extractedContent = content;
+                }
+              } catch (e) {
+                // Try raw string
+                if (typeof extractResult.result === 'string' && extractResult.result.length > 100) {
+                  extractedContent = extractResult.result;
+                }
+              }
+            }
+          }
+          
+          // If we have extracted content and it contains actual search results, format it
+          if (!doneMessage && extractedContent && extractedContent.length > 200) {
+            console.log('[ElectronBrowserAgent] Using extracted content as done message');
+            // Clean up and format the extracted content
+            const lines = extractedContent.split('\n').filter(l => l.trim() && l.length > 3);
+            // Take the first meaningful lines
+            const summary = lines.slice(0, 20).join('\n');
+            doneMessage = `Here's what I found:\n\n${summary}`;
+          }
+          
+          // If AI put content in fullText instead of done message, use it
+          // But only if fullText is substantial (not just "Perfect! I found...")
+          if (!doneMessage && executorResult.fullText && executorResult.fullText.trim().length > 200) {
+            console.log('[ElectronBrowserAgent] Using fullText as done message (AI did not pass message arg)');
+            doneMessage = executorResult.fullText;
+          }
+          
+          // Log what we found for debugging
+          console.log('[ElectronBrowserAgent] Done message extracted:', doneMessage?.substring(0, 200));
         }
         
-        // If we have tool results but no final text, it might be an implicit done?
-        // Or if it stopped due to maxSteps.
-        return { success: true, text: "Execution finished." };
+        if (doneToolCalled) {
+          const summary = doneMessage || executorResult.fullText || 'Task completed successfully.';
+          this.publishAssistant(`✅ ${summary}`);
+          return { success: true, text: summary };
+        }
+        
+        // If done wasn't called but we have text output, use it
+        if (executorResult.fullText && executorResult.fullText.trim()) {
+          this.publishAssistant(`✅ ${executorResult.fullText}`);
+          return { success: true, text: executorResult.fullText };
+        }
+        
+        // Fallback: list what tools were used
+        const toolsUsed = executorResult.toolCalls?.map(tc => tc.toolName).join(', ') || 'none';
+        const completionMessage = `Task execution finished. Tools used: ${toolsUsed}`;
+        this.publishAssistant(`✅ ${completionMessage}`);
+        return { success: true, text: completionMessage };
 
     } catch (error) {
         this.publishAssistant(`❌ Execution failed: ${error.message}`);

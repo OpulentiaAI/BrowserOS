@@ -15,6 +15,7 @@ const { createWaitTool } = require('./wait');
 const { createScrollTool } = require('./scroll');
 const { createKeyTool } = require('./key');
 const { createClearTool } = require('./clear');
+const { createSearchTool } = require('./search');
 
 // Tab management
 const { createTabsTool } = require('./tabs');
@@ -61,6 +62,7 @@ function createAllTools(context) {
     createKeyTool(context),
     createClearTool(context),
     createComputerTool(context), // New unified tool
+    createSearchTool(context), // Convenience search tool
     
     // Tab management
     createTabsTool(context),
@@ -135,6 +137,7 @@ module.exports = {
   createKeyTool,
   createClearTool,
   createComputerTool,
+  createSearchTool,
   createTabsTool,
   createTabOpenTool,
   createTabFocusTool,
